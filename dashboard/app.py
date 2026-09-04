@@ -4,6 +4,7 @@ Runs on loopback (127.0.0.1) so it is never exposed to the network by default.
 """
 
 import os
+import hmac
 import platform
 import logging
 from datetime import datetime
@@ -18,7 +19,7 @@ from flask import (
     redirect,
     url_for,
     session,
-    send_file,
+    send_from_directory,
     abort,
     flash,
 )
@@ -39,7 +40,7 @@ app.secret_key = config.DASHBOARD_SECRET_KEY
 # ------------------------------------------------------------------
 
 def _check_password(password: str) -> bool:
-    return password == config.SUPERVISOR_PASSWORD
+    return hmac.compare_digest(password, config.SUPERVISOR_PASSWORD)
 
 
 def login_required(f):
@@ -123,10 +124,7 @@ def system():
 @login_required
 def download():
     path = request.args.get("path", "")
-    # Security: resolve to an absolute, canonical path, then verify it is
-    # strictly inside one of the known storage directories.  Using
-    # os.path.commonpath avoids the sibling-directory bypass that plain
-    # startswith() is vulnerable to.
+    # Resolve to a canonical absolute path before any checks.
     abs_path = os.path.realpath(os.path.abspath(path))
     allowed = [
         os.path.realpath(os.path.abspath(config.RECORDINGS_DIR)),
@@ -135,21 +133,26 @@ def download():
         os.path.realpath(os.path.abspath(config.LOGS_DIR)),
     ]
 
-    def _is_safe(target: str, allowed_dirs: list) -> bool:
-        for allowed_dir in allowed_dirs:
-            try:
-                if os.path.commonpath([target, allowed_dir]) == allowed_dir:
-                    return True
-            except ValueError:
-                # commonpath raises ValueError on mixed drive letters (Windows)
-                pass
-        return False
+    # Determine which allowed directory contains the requested file.
+    # Using os.path.commonpath prevents the sibling-directory bypass
+    # that plain startswith() is vulnerable to.
+    containing_dir: str | None = None
+    for allowed_dir in allowed:
+        try:
+            if os.path.commonpath([abs_path, allowed_dir]) == allowed_dir:
+                containing_dir = allowed_dir
+                break
+        except ValueError:
+            # commonpath raises ValueError on mixed drive letters (Windows)
+            pass
 
-    if not _is_safe(abs_path, allowed):
+    if containing_dir is None:
         abort(403)
-    if not os.path.isfile(abs_path):
-        abort(404)
-    return send_file(abs_path, as_attachment=True)
+
+    # Use send_from_directory so Flask handles path safety; only the
+    # filename (not the full path) is passed through user-controlled input.
+    filename = os.path.basename(abs_path)
+    return send_from_directory(containing_dir, filename, as_attachment=True)
 
 
 # ------------------------------------------------------------------
@@ -159,7 +162,7 @@ def download():
 def _system_info() -> dict:
     cpu = psutil.cpu_percent(interval=0.5)
     mem = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
+    disk = psutil.disk_usage(config.BASE_DIR if os.path.isdir(config.BASE_DIR) else "/")
     return {
         "hostname": platform.node(),
         "os": f"{platform.system()} {platform.version()}",

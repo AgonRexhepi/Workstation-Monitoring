@@ -77,22 +77,26 @@ class StorageManager:
 
     def _enforce_size_policy(self):
         max_bytes = config.MAX_STORAGE_MB * 1024 * 1024
-        files = []
+        # Collect (path, stat) pairs once to avoid repeated syscalls and
+        # race conditions between the total calculation and the sort/deletion.
+        file_stats = []
         for directory in _all_dirs():
             for path in Path(directory).rglob("*"):
                 if path.is_file():
-                    files.append(path)
-        total = sum(p.stat().st_size for p in files)
+                    try:
+                        file_stats.append((path, path.stat()))
+                    except OSError:
+                        pass  # file removed between rglob and stat
+        total = sum(s.st_size for _, s in file_stats)
         if total <= max_bytes:
             return
         # Sort oldest-first
-        files.sort(key=lambda p: p.stat().st_mtime)
-        for path in files:
+        file_stats.sort(key=lambda ps: ps[1].st_mtime)
+        for path, stat in file_stats:
             if total <= max_bytes:
                 break
-            size = path.stat().st_size
             path.unlink(missing_ok=True)
-            total -= size
+            total -= stat.st_size
             logger.info("Removed file due to size limit: %s", path)
 
 

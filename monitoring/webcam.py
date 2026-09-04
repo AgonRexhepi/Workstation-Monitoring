@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class WebcamRecorder:
-    """Captures webcam video in 10-minute MP4 segments."""
+    """Captures webcam video in segments of `config.SEGMENT_DURATION_SECONDS` seconds."""
 
     def __init__(self):
         self._stop_event = threading.Event()
