@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Workstation Monitor{% endblock %}
+{% block content %}
+<h2>Dashboard Overview</h2>
+<p class="text-muted">Monitoring is <strong class="text-success">active</strong>.</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card text-bg-primary">
+      <div class="card-body">
+        <h6 class="card-title">Screen Recordings</h6>
+        <p class="fs-4 mb-0">{{ summary.recordings }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-info">
+      <div class="card-body">
+        <h6 class="card-title">Webcam Recordings</h6>
+        <p class="fs-4 mb-0">{{ summary.webcam }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-success">
+      <div class="card-body">
+        <h6 class="card-title">Screenshots</h6>
+        <p class="fs-4 mb-0">{{ summary.screenshots }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-secondary">
+      <div class="card-body">
+        <h6 class="card-title">Storage Used</h6>
+        <p class="fs-4 mb-0">{{ summary.total_mb }} MB</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>System Snapshot</h4>
+<table class="table table-bordered w-auto">
+  <tr><th>Hostname</th><td>{{ system_info.hostname }}</td></tr>
+  <tr><th>OS</th><td>{{ system_info.os }}</td></tr>
+  <tr><th>CPU Usage</th><td>{{ system_info.cpu_percent }}%</td></tr>
+  <tr><th>Memory Usage</th><td>{{ system_info.mem_used_percent }}%</td></tr>
+  <tr><th>Disk Usage</th><td>{{ system_info.disk_used_percent }}%</td></tr>
+  <tr><th>Last Refreshed</th><td>{{ system_info.timestamp }}</td></tr>
+</table>
+{% endblock %}

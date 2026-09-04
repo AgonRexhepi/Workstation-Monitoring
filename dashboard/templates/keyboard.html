@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Keyboard Log – Workstation Monitor{% endblock %}
+{% block content %}
+<h2>Keyboard Activity Log</h2>
+<p class="text-muted small">Showing last 500 entries.</p>
+{% if lines %}
+<pre class="bg-dark text-light p-3 rounded" style="max-height:600px;overflow-y:auto;font-size:0.8rem;">{% for line in lines %}{{ line }}{% endfor %}</pre>
+{% else %}
+<p class="text-muted">No keyboard log data found.</p>
+{% endif %}
+{% endblock %}

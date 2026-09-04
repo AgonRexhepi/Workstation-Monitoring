@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Screenshots – Workstation Monitor{% endblock %}
+{% block content %}
+<h2>Screenshots</h2>
+{% if items %}
+<div class="row g-3">
+  {% for item in items %}
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body">
+        <p class="card-text small text-muted">{{ item.modified }}</p>
+        <a class="btn btn-sm btn-outline-primary"
+           href="{{ url_for('download', path=item.path) }}">Download {{ item.name }}</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">No screenshots found.</p>
+{% endif %}
+{% endblock %}

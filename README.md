@@ -1,1 +1,141 @@
-# Workstation-Monitoring
+# Workstation Monitoring
+
+A standalone Python application for monitoring student workstations during examinations, in compliance with applicable academic regulations.
+
+---
+
+## Features
+
+| Feature | Details |
+|---|---|
+| **Windows Background Service** | Runs as a Windows Service, starts automatically after boot |
+| **Screen Recording** | Captures the primary display in 10-minute MP4 segments |
+| **Webcam Recording** | Records from the connected camera in 10-minute MP4 segments |
+| **Keyboard Monitoring** | Logs all key presses with timestamps |
+| **Automatic Screenshots** | Periodic PNG screenshots at a configurable interval |
+| **Local Dashboard** | Flask web UI (loopback only) for authorised supervisors |
+| **Storage Management** | Configurable retention policy by age and total disk usage |
+| **Auto-recovery** | Service configured to restart automatically on failure |
+
+---
+
+## Architecture
+
+```
+Windows Boot
+     ↓
+WorkstationMonitorSvc (Windows Service)
+     ↓
+MonitoringOrchestrator
+     ├── ScreenRecorder      → C:\WorkstationMonitor\recordings\
+     ├── WebcamRecorder      → C:\WorkstationMonitor\webcam\
+     ├── KeyboardMonitor     → C:\WorkstationMonitor\logs\keyboard.log
+     ├── StorageManager      (retention policy enforcement)
+     └── Dashboard (Flask)   → http://127.0.0.1:5000/
+```
+
+---
+
+## Project Structure
+
+```
+Workstation-Monitoring/
+├── config.py                  # Central configuration
+├── service.py                 # Windows Service entry point
+├── install_service.py         # Service installer helper
+├── requirements.txt
+├── monitoring/
+│   ├── screen.py              # Screen recorder + screenshots
+│   ├── webcam.py              # Webcam recorder
+│   └── keyboard_monitor.py   # Keyboard activity logger
+├── storage/
+│   └── manager.py             # Storage helpers and retention
+├── dashboard/
+│   ├── app.py                 # Flask dashboard
+│   └── templates/             # HTML templates
+│       ├── base.html
+│       ├── login.html
+│       ├── index.html
+│       ├── recordings.html
+│       ├── screenshots.html
+│       ├── keyboard.html
+│       └── system.html
+└── tests/
+    └── test_monitoring.py
+```
+
+---
+
+## Installation (Windows, run as Administrator)
+
+### 1. Install dependencies
+
+```powershell
+pip install -r requirements.txt
+# Post-install step required by pywin32:
+python -m pywin32_postinstall -install
+```
+
+### 2. Configure
+
+Edit `config.py` to set:
+
+- `BASE_DIR` – where recordings and logs are stored
+- `SUPERVISOR_PASSWORD` – dashboard login password (or set `MONITOR_SUPERVISOR_PASSWORD` env var)
+- `DASHBOARD_SECRET_KEY` – Flask session key (or set `MONITOR_SECRET_KEY` env var)
+- Recording FPS, webcam index, retention policy, etc.
+
+### 3. Install and start the service
+
+```powershell
+python install_service.py
+```
+
+This installs the Windows Service, configures automatic startup and automatic restart on failure, and starts the service.
+
+### Manual service management
+
+```powershell
+python service.py install   # install
+python service.py start     # start
+python service.py stop      # stop
+python service.py remove    # uninstall
+python service.py debug     # run in console (development)
+```
+
+---
+
+## Dashboard
+
+Open a browser on the monitored workstation and navigate to:
+
+```
+http://127.0.0.1:5000/
+```
+
+Log in with the supervisor password. The dashboard provides:
+
+- **Overview** – storage summary and live system snapshot
+- **Screen Recordings** – list and download MP4 recordings
+- **Webcam Recordings** – list and download webcam videos
+- **Screenshots** – list and download PNG screenshots
+- **Keyboard Log** – view the last 500 key-press entries
+- **System Info** – CPU, memory, disk usage
+
+The dashboard binds to `127.0.0.1` only. Supervisors must be physically present at the workstation (or use an authorised remote-access mechanism) to access it.
+
+---
+
+## Running Tests
+
+```bash
+pip install pytest flask psutil mss opencv-python numpy pynput
+pytest tests/ -v
+```
+
+---
+
+## Legal / Ethical Notice
+
+This application is intended **strictly for authorised academic examination monitoring**.  
+Students must be informed **before** the exam that workstation monitoring is active and that screen, webcam, and keyboard activity may be recorded in accordance with applicable academic regulations and data-protection legislation.

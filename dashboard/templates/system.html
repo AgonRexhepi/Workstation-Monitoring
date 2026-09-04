@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}System Info – Workstation Monitor{% endblock %}
+{% block content %}
+<h2>System Information</h2>
+<table class="table table-bordered w-auto">
+  <tr><th>Hostname</th><td>{{ info.hostname }}</td></tr>
+  <tr><th>Operating System</th><td>{{ info.os }}</td></tr>
+  <tr><th>CPU Usage</th><td>{{ info.cpu_percent }}%</td></tr>
+  <tr><th>Total Memory</th><td>{{ info.mem_total_gb }} GB</td></tr>
+  <tr><th>Memory Usage</th><td>{{ info.mem_used_percent }}%</td></tr>
+  <tr><th>Total Disk</th><td>{{ info.disk_total_gb }} GB</td></tr>
+  <tr><th>Disk Usage</th><td>{{ info.disk_used_percent }}%</td></tr>
+  <tr><th>Timestamp</th><td>{{ info.timestamp }}</td></tr>
+</table>
+{% endblock %}
