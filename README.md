@@ -76,6 +76,10 @@ pip install -r requirements.txt
 python -m pywin32_postinstall -install
 ```
 
+Important: for Windows Service mode, install dependencies from an elevated shell
+so packages are available to the system interpreter used by the service account.
+If pip reports "Defaulting to user installation", re-run in Administrator mode.
+
 ### 2. Configure
 
 Edit `config.py` to set:
@@ -101,6 +105,18 @@ python service.py start     # start
 python service.py stop      # stop
 python service.py remove    # uninstall
 python service.py debug     # run in console (development)
+```
+
+### Troubleshooting service startup
+
+- If debug mode works but service mode stops immediately, check Windows Event Viewer
+     (Application log, provider: `Python Service`).
+- Error `ModuleNotFoundError: No module named 'cv2'` means dependencies were installed
+     only for the current user, not for the service runtime.
+- Fix: open an elevated shell and run:
+
+```powershell
+python -m pip install -r requirements.txt
 ```
 
 ---
