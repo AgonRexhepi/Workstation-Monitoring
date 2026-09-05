@@ -113,7 +113,11 @@ def _file_info(path: Path) -> dict:
 
 
 def list_screen_recordings() -> list[dict]:
-    return _list_files(config.RECORDINGS_DIR, "*.mp4")
+    return _list_files(
+        config.RECORDINGS_DIR,
+        "*.mp4",
+        exclude_suffixes=("_active.mp4",),
+    )
 
 
 def list_webcam_recordings() -> list[dict]:
@@ -133,12 +137,18 @@ def get_keyboard_log_lines(max_lines: int = 500) -> list[str]:
     return lines[-max_lines:]
 
 
-def _list_files(directory: str, pattern: str) -> list[dict]:
+def _list_files(
+    directory: str,
+    pattern: str,
+    exclude_suffixes: tuple[str, ...] = (),
+) -> list[dict]:
     results = []
     base = Path(directory)
     if not base.exists():
         return results
     for path in sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True):
+        if exclude_suffixes and any(path.name.endswith(suf) for suf in exclude_suffixes):
+            continue
         results.append(_file_info(path))
     return results
 

@@ -7,6 +7,7 @@ import os
 import time
 import logging
 import threading
+import uuid
 from datetime import datetime
 
 import cv2
@@ -72,11 +73,19 @@ def _spawn_agent_in_user_session():
 
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         agent_log_file = os.path.join(config.LOGS_DIR, "screen_agent.log")
+        stop_file = os.path.join(
+            config.LOGS_DIR,
+            f"screen_agent_stop_{uuid.uuid4().hex}.flag",
+        )
 
         python_exe = _resolve_python_executable().replace('"', '\\"')
         agent_script = _AGENT_SCRIPT.replace('"', '\\"')
         agent_log_file_esc = agent_log_file.replace('"', '\\"')
-        cmd = f'"{python_exe}" "{agent_script}" "{agent_log_file_esc}"'
+        stop_file_esc = stop_file.replace('"', '\\"')
+        cmd = (
+            f'"{python_exe}" "{agent_script}" '
+            f'"{agent_log_file_esc}" "{stop_file_esc}"'
+        )
         startup = win32process.STARTUPINFO()
         startup.dwFlags = win32con.STARTF_USESHOWWINDOW
         startup.wShowWindow = win32con.SW_HIDE
@@ -101,7 +110,7 @@ def _spawn_agent_in_user_session():
         proc_handle, thread_handle, pid, _tid = proc_info
         win32api.CloseHandle(thread_handle)
         logger.info("Screen agent spawned in user session %d (PID %d)", session_id, pid)
-        return proc_handle
+        return proc_handle, stop_file
     except Exception as exc:
         logger.warning("Could not spawn screen agent in user session: %s", exc)
         return None
@@ -115,6 +124,7 @@ class ScreenRecorder:
         self._record_thread: threading.Thread | None = None
         self._screenshot_thread: threading.Thread | None = None
         self._agent_handle = None
+        self._agent_stop_file: str | None = None
         self._agent_lock = threading.Lock()
         self._agent_watchdog_thread: threading.Thread | None = None
         self._using_agent = False
@@ -127,10 +137,12 @@ class ScreenRecorder:
         self._stop_event.clear()
         if _is_session_0():
             logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
-            handle = _spawn_agent_in_user_session()
-            if handle is not None:
+            spawned = _spawn_agent_in_user_session()
+            if spawned is not None:
+                handle, stop_file = spawned
                 with self._agent_lock:
                     self._agent_handle = handle
+                    self._agent_stop_file = stop_file
                 self._using_agent = True
                 self._agent_watchdog_thread = threading.Thread(
                     target=self._agent_watchdog_loop,
@@ -163,20 +175,45 @@ class ScreenRecorder:
         if self._using_agent:
             with self._agent_lock:
                 handle = self._agent_handle
+                stop_file = self._agent_stop_file
                 self._agent_handle = None
+                self._agent_stop_file = None
             self._using_agent = False
+            if stop_file:
+                try:
+                    with open(stop_file, "w", encoding="utf-8"):
+                        pass
+                except OSError as exc:
+                    logger.debug("Could not create screen agent stop file: %s", exc)
+
+            exited_cleanly = False
+            if handle is not None:
+                try:
+                    import win32event
+                    wait_rc = win32event.WaitForSingleObject(handle, 7000)
+                    exited_cleanly = wait_rc == win32event.WAIT_OBJECT_0
+                except Exception:
+                    exited_cleanly = False
+
             if handle is not None:
                 try:
                     import win32process
                     import win32api
-                    try:
-                        win32process.TerminateProcess(handle, 0)
-                    except Exception as exc:
-                        logger.debug("Error terminating screen agent: %s", exc)
+                    if not exited_cleanly:
+                        try:
+                            win32process.TerminateProcess(handle, 0)
+                        except Exception as exc:
+                            logger.debug("Error terminating screen agent: %s", exc)
                     finally:
                         win32api.CloseHandle(handle)
                 except Exception as exc:
                     logger.debug("Error cleaning up screen agent handle: %s", exc)
+            if stop_file:
+                try:
+                    if os.path.exists(stop_file):
+                        os.remove(stop_file)
+                except OSError:
+                    logger.debug("Could not remove screen agent stop file: %s", stop_file)
             if self._agent_watchdog_thread:
                 self._agent_watchdog_thread.join(timeout=5)
             logger.info("ScreenRecorder stopped")
@@ -228,10 +265,12 @@ class ScreenRecorder:
                 "Screen agent exited unexpectedly (code %s); attempting restart",
                 exit_code,
             )
-            new_handle = _spawn_agent_in_user_session()
-            if new_handle is not None:
+            spawned = _spawn_agent_in_user_session()
+            if spawned is not None:
+                new_handle, stop_file = spawned
                 with self._agent_lock:
                     self._agent_handle = new_handle
+                    self._agent_stop_file = stop_file
             else:
                 logger.warning("Screen agent restart failed; will retry")
 
@@ -280,10 +319,11 @@ class ScreenRecorder:
             height = monitor["height"]
             while not self._stop_event.is_set():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = os.path.join(
+                final_filename = os.path.join(
                     config.RECORDINGS_DIR, f"screen_{timestamp}.mp4"
                 )
-                writer, used_codec = self._open_writer(filename, width, height)
+                active_filename = final_filename.replace(".mp4", "_active.mp4")
+                writer, used_codec = self._open_writer(active_filename, width, height)
                 # Check if VideoWriter was successfully initialized
                 if writer is None:
                     self._stop_event.wait(30)
@@ -315,14 +355,20 @@ class ScreenRecorder:
                 finally:
                     writer.release()
                 if frames_written > 0:
-                    logger.info("Saved screen segment: %s", filename)
+                    try:
+                        if os.path.exists(final_filename):
+                            os.remove(final_filename)
+                        os.replace(active_filename, final_filename)
+                        logger.info("Saved screen segment: %s", final_filename)
+                    except OSError:
+                        logger.exception("Failed to finalize screen segment: %s", active_filename)
                 else:
                     try:
-                        if os.path.exists(filename):
-                            os.remove(filename)
+                        if os.path.exists(active_filename):
+                            os.remove(active_filename)
                     except OSError:
-                        logger.debug("Could not remove empty screen segment: %s", filename)
-                    logger.warning("Dropped empty screen segment: %s", filename)
+                        logger.debug("Could not remove empty screen segment: %s", active_filename)
+                    logger.warning("Dropped empty screen segment: %s", active_filename)
 
                 if segment_failed:
                     self._stop_event.wait(10)
