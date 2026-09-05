@@ -61,16 +61,15 @@ def _spawn_agent_in_user_session(log_file: str):
 
         # WTSQueryUserToken already returns a primary token; duplicate it so
         # we own a handle that CreateProcessAsUser can consume.
-        # pywin32 DuplicateTokenEx signature: (ExistingToken, DesiredAccess, ImpersonationLevel, TokenType)
-        # Note: when TokenType is TokenPrimary, ImpersonationLevel is ignored by Windows
-        # (MSDN: "If TokenType is TokenPrimary, this parameter is ignored").
+        # pywin32 DuplicateTokenEx in this environment expects
+        # (ExistingToken, ImpersonationLevel, DesiredAccess, TokenType).
         user_token = win32ts.WTSQueryUserToken(session_id)
         try:
             primary_token = win32security.DuplicateTokenEx(
                 user_token,
+                win32security.SecurityImpersonation,
                 win32con.TOKEN_ALL_ACCESS,
                 win32security.TokenPrimary,
-                win32security.SecurityImpersonation,
             )
         finally:
             win32api.CloseHandle(user_token)

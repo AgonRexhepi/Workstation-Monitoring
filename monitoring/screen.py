@@ -20,6 +20,77 @@ import config
 
 logger = logging.getLogger(__name__)
 
+_AGENT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screen_agent.py")
+
+
+def _is_session_0() -> bool:
+    """Return True when the current process is running in Windows Session 0."""
+    try:
+        import ctypes
+        ProcessIdToSessionId = ctypes.windll.kernel32.ProcessIdToSessionId
+        session = ctypes.c_ulong(0)
+        ProcessIdToSessionId(os.getpid(), ctypes.byref(session))
+        return session.value == 0
+    except Exception:
+        return False
+
+
+def _spawn_agent_in_user_session():
+    """Spawn the screen agent in the active console user session."""
+    try:
+        import win32ts
+        import win32security
+        import win32process
+        import win32con
+        import win32api
+
+        session_id = win32ts.WTSGetActiveConsoleSessionId()
+        if session_id == 0xFFFFFFFF:
+            logger.warning("Screen agent: no active user session found")
+            return None
+
+        user_token = win32ts.WTSQueryUserToken(session_id)
+        try:
+            primary_token = win32security.DuplicateTokenEx(
+                user_token,
+                win32security.SecurityImpersonation,
+                win32con.TOKEN_ALL_ACCESS,
+                win32security.TokenPrimary,
+            )
+        finally:
+            win32api.CloseHandle(user_token)
+
+        python_exe = sys.executable.replace('"', '\\"')
+        agent_script = _AGENT_SCRIPT.replace('"', '\\"')
+        cmd = f'"{python_exe}" "{agent_script}"'
+        startup = win32process.STARTUPINFO()
+        startup.dwFlags = win32con.STARTF_USESHOWWINDOW
+        startup.wShowWindow = win32con.SW_HIDE
+
+        try:
+            proc_info = win32process.CreateProcessAsUser(
+                primary_token,
+                None,
+                cmd,
+                None,
+                None,
+                False,
+                win32con.CREATE_NO_WINDOW,
+                None,
+                None,
+                startup,
+            )
+        finally:
+            win32api.CloseHandle(primary_token)
+
+        proc_handle, thread_handle, pid, _tid = proc_info
+        win32api.CloseHandle(thread_handle)
+        logger.info("Screen agent spawned in user session %d (PID %d)", session_id, pid)
+        return proc_handle
+    except Exception as exc:
+        logger.warning("Could not spawn screen agent in user session: %s", exc)
+        return None
+
 
 class ScreenRecorder:
     """Records the primary screen at a configurable FPS and takes periodic screenshots."""
@@ -28,12 +99,26 @@ class ScreenRecorder:
         self._stop_event = threading.Event()
         self._record_thread: threading.Thread | None = None
         self._screenshot_thread: threading.Thread | None = None
+        self._agent_handle = None
+        self._using_agent = False
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def start(self):
+        if _is_session_0():
+            logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
+            self._agent_handle = _spawn_agent_in_user_session()
+            if self._agent_handle is not None:
+                self._using_agent = True
+                logger.info("ScreenRecorder started (user-session agent)")
+                return
+            logger.warning(
+                "ScreenRecorder: could not spawn user-session agent; "
+                "screen recording will run in Session 0 and may fail."
+            )
+
         if self._record_thread and self._record_thread.is_alive():
             logger.warning("ScreenRecorder already running")
             return
@@ -49,6 +134,24 @@ class ScreenRecorder:
         logger.info("ScreenRecorder started")
 
     def stop(self):
+        if self._using_agent and self._agent_handle is not None:
+            handle = self._agent_handle
+            self._agent_handle = None
+            self._using_agent = False
+            try:
+                import win32process
+                import win32api
+                try:
+                    win32process.TerminateProcess(handle, 0)
+                except Exception as exc:
+                    logger.debug("Error terminating screen agent: %s", exc)
+                finally:
+                    win32api.CloseHandle(handle)
+            except Exception as exc:
+                logger.debug("Error cleaning up screen agent handle: %s", exc)
+            logger.info("ScreenRecorder stopped")
+            return
+
         self._stop_event.set()
         if self._record_thread:
             self._record_thread.join(timeout=10)
@@ -151,6 +254,9 @@ class ScreenRecorder:
     def _screenshot_loop(self):
         os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)
         with mss.mss() as sct:
+            if len(sct.monitors) < 2:
+                logger.error("No primary monitor available for screenshots")
+                return
             monitor = sct.monitors[1]
             counter = 0
             while not self._stop_event.wait(config.SCREENSHOT_INTERVAL):
