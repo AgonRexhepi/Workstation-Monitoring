@@ -19,8 +19,8 @@ WEBCAM_DIR = os.path.join(BASE_DIR, "webcam")
 # Screen recording
 # ------------------------------------------------------------------
 SCREEN_FPS = 5                    # frames per second for screen capture
-SCREENSHOT_INTERVAL = 300         # seconds between automatic screenshots (5 minutes)
-SCREEN_CODEC = "H264"            # fourcc codec for screen video (H264 better supported)
+SCREENSHOT_INTERVAL = 60         # seconds between automatic screenshots (1 minute)
+SCREEN_CODEC = "mp4v"            # default codec with broad OpenCV/FFmpeg availability
 SCREEN_WRITER_TIMEOUT = 10        # seconds before giving up on VideoWriter init
 
 # ------------------------------------------------------------------
@@ -30,7 +30,7 @@ WEBCAM_INDEX = 0                  # camera device index
 WEBCAM_FPS = 10                   # frames per second for webcam capture
 WEBCAM_WIDTH = 640
 WEBCAM_HEIGHT = 480
-WEBCAM_CODEC = "H264"            # H264 codec for better compatibility
+WEBCAM_CODEC = "mp4v"            # default codec with broad OpenCV/FFmpeg availability
 
 # ------------------------------------------------------------------
 # Keyboard monitoring

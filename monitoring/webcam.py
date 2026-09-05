@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 class WebcamRecorder:
     """Captures webcam video in 10-minute MP4 segments."""
 
+    # Codecs tried in order until one opens successfully.
+    _CODEC_FALLBACKS = ["mp4v", "XVID", "H264"]
+
     def __init__(self):
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -41,6 +44,41 @@ class WebcamRecorder:
             self._thread.join(timeout=10)
         logger.info("WebcamRecorder stopped")
 
+    def _open_writer(self, filename: str):
+        """Try codecs in fallback order; return (VideoWriter, codec_str) or (None, None)."""
+        seen: set = set()
+        codecs_to_try = [config.WEBCAM_CODEC] + self._CODEC_FALLBACKS
+        tried: list = []
+        for codec in codecs_to_try:
+            if codec in seen:
+                continue
+            seen.add(codec)
+            tried.append(codec)
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            writer = cv2.VideoWriter(
+                filename,
+                fourcc,
+                config.WEBCAM_FPS,
+                (config.WEBCAM_WIDTH, config.WEBCAM_HEIGHT),
+            )
+            if writer.isOpened():
+                if codec != config.WEBCAM_CODEC:
+                    logger.warning(
+                        "Codec %s unavailable for webcam; using %s instead",
+                        config.WEBCAM_CODEC, codec,
+                    )
+                return writer, codec
+            writer.release()
+
+        logger.error(
+            "Failed to initialize VideoWriter for webcam recording. "
+            "Tried codecs %s, Resolution: %dx%d. Retrying in 30s.",
+            tried,
+            config.WEBCAM_WIDTH,
+            config.WEBCAM_HEIGHT,
+        )
+        return None, None
+
     def _record_loop(self):
         os.makedirs(config.WEBCAM_DIR, exist_ok=True)
         while not self._stop_event.is_set():
@@ -58,15 +96,14 @@ class WebcamRecorder:
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(config.WEBCAM_DIR, f"webcam_{timestamp}.mp4")
-            fourcc = cv2.VideoWriter_fourcc(*config.WEBCAM_CODEC)
-            writer = cv2.VideoWriter(
-                filename,
-                fourcc,
-                config.WEBCAM_FPS,
-                (config.WEBCAM_WIDTH, config.WEBCAM_HEIGHT),
-            )
+            writer, used_codec = self._open_writer(filename)
+            if writer is None:
+                cap.release()
+                self._stop_event.wait(30)
+                continue
 
             segment_end = time.time() + config.SEGMENT_DURATION_SECONDS
+            frames_written = 0
             try:
                 while not self._stop_event.is_set() and time.time() < segment_end:
                     ret, frame = cap.read()
@@ -74,6 +111,7 @@ class WebcamRecorder:
                         logger.warning("Webcam frame read failed; stopping segment")
                         break
                     writer.write(frame)
+                    frames_written += 1
                     time.sleep(1.0 / config.WEBCAM_FPS)
             except Exception:
                 logger.exception("Error in webcam record loop")
@@ -81,4 +119,12 @@ class WebcamRecorder:
                 writer.release()
                 cap.release()
 
-            logger.info("Saved webcam segment: %s", filename)
+            if frames_written > 0:
+                logger.info("Saved webcam segment: %s", filename)
+            else:
+                try:
+                    if os.path.exists(filename):
+                        os.remove(filename)
+                except OSError:
+                    logger.debug("Could not remove empty webcam segment: %s", filename)
+                logger.warning("Dropped empty webcam segment: %s", filename)
