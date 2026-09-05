@@ -12,6 +12,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 import mss
+import mss.tools
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -92,6 +93,9 @@ class ScreenRecorder:
     def _record_loop(self):
         os.makedirs(config.RECORDINGS_DIR, exist_ok=True)
         with mss.mss() as sct:
+            if len(sct.monitors) < 2:
+                logger.error("No primary monitor available for screen recording")
+                return
             monitor = sct.monitors[1]  # primary monitor
             width = monitor["width"]
             height = monitor["height"]
@@ -107,12 +111,22 @@ class ScreenRecorder:
                     continue
                 # Record in segments
                 segment_end = time.time() + config.SEGMENT_DURATION_SECONDS
+                frames_written = 0
+                segment_failed = False
                 try:
                     while not self._stop_event.is_set() and time.time() < segment_end:
                         frame_start = time.time()
-                        img = np.array(sct.grab(monitor))
+                        try:
+                            img = np.array(sct.grab(monitor))
+                        except Exception as exc:
+                            # Session 0 services can intermittently lose access to
+                            # the interactive desktop; back off instead of hot-looping.
+                            logger.error("Screen capture failed: %s", exc)
+                            segment_failed = True
+                            break
                         frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                         writer.write(frame)
+                        frames_written += 1
                         elapsed = time.time() - frame_start
                         sleep_time = (1.0 / config.SCREEN_FPS) - elapsed
                         if sleep_time > 0:
@@ -121,7 +135,18 @@ class ScreenRecorder:
                     logger.exception("Error in screen record loop")
                 finally:
                     writer.release()
-                logger.info("Saved screen segment: %s", filename)
+                if frames_written > 0:
+                    logger.info("Saved screen segment: %s", filename)
+                else:
+                    try:
+                        if os.path.exists(filename):
+                            os.remove(filename)
+                    except OSError:
+                        logger.debug("Could not remove empty screen segment: %s", filename)
+                    logger.warning("Dropped empty screen segment: %s", filename)
+
+                if segment_failed:
+                    self._stop_event.wait(10)
 
     def _screenshot_loop(self):
         os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)

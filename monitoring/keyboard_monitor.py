@@ -69,8 +69,8 @@ def _spawn_agent_in_user_session(log_file: str):
             primary_token = win32security.DuplicateTokenEx(
                 user_token,
                 win32con.TOKEN_ALL_ACCESS,
-                win32security.SecurityImpersonation,
                 win32security.TokenPrimary,
+                win32security.SecurityImpersonation,
             )
         finally:
             win32api.CloseHandle(user_token)
