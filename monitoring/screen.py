@@ -199,11 +199,12 @@ class ScreenRecorder:
                 try:
                     import win32process
                     import win32api
-                    if not exited_cleanly:
-                        try:
-                            win32process.TerminateProcess(handle, 0)
-                        except Exception as exc:
-                            logger.debug("Error terminating screen agent: %s", exc)
+                    try:
+                        if not exited_cleanly:
+                            try:
+                                win32process.TerminateProcess(handle, 0)
+                            except Exception as exc:
+                                logger.debug("Error terminating screen agent: %s", exc)
                     finally:
                         win32api.CloseHandle(handle)
                 except Exception as exc:
