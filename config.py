@@ -19,7 +19,7 @@ WEBCAM_DIR = os.path.join(BASE_DIR, "webcam")
 # Screen recording
 # ------------------------------------------------------------------
 SCREEN_FPS = 5                    # frames per second for screen capture
-SCREENSHOT_INTERVAL = 30          # seconds between automatic screenshots
+SCREENSHOT_INTERVAL = 300         # seconds between automatic screenshots (5 minutes)
 SCREEN_CODEC = "H264"            # fourcc codec for screen video (H264 better supported)
 SCREEN_WRITER_TIMEOUT = 10        # seconds before giving up on VideoWriter init
 
@@ -64,7 +64,7 @@ SUPERVISOR_PASSWORD = os.environ.get("MONITOR_SUPERVISOR_PASSWORD", "supervisor"
 # ------------------------------------------------------------------
 # Recording segment duration
 # ------------------------------------------------------------------
-SEGMENT_DURATION_SECONDS = 600  # 10-minute video segments
+SEGMENT_DURATION_SECONDS = 1800  # 30-minute video segments
 
 # ------------------------------------------------------------------
 # Storage / retention

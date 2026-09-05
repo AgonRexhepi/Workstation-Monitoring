@@ -59,6 +59,36 @@ class ScreenRecorder:
     # Internal loops
     # ------------------------------------------------------------------
 
+    # Codecs tried in order until one opens successfully.
+    _CODEC_FALLBACKS = ["H264", "XVID", "mp4v"]
+
+    def _open_writer(self, filename: str, width: int, height: int):
+        """Try codecs in fallback order; return (VideoWriter, codec_str) or (None, None)."""
+        seen: set = set()
+        codecs_to_try = [config.SCREEN_CODEC] + self._CODEC_FALLBACKS
+        tried: list = []
+        for codec in codecs_to_try:
+            if codec in seen:
+                continue
+            seen.add(codec)
+            tried.append(codec)
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            writer = cv2.VideoWriter(filename, fourcc, config.SCREEN_FPS, (width, height))
+            if writer.isOpened():
+                if codec != config.SCREEN_CODEC:
+                    logger.warning(
+                        "Codec %s unavailable; using %s instead",
+                        config.SCREEN_CODEC, codec,
+                    )
+                return writer, codec
+            writer.release()
+        logger.error(
+            "Failed to initialize VideoWriter for screen recording. "
+            "Tried codecs %s, Resolution: %dx%d. Retrying in 30s.",
+            tried, width, height
+        )
+        return None, None
+
     def _record_loop(self):
         os.makedirs(config.RECORDINGS_DIR, exist_ok=True)
         with mss.mss() as sct:
@@ -70,20 +100,12 @@ class ScreenRecorder:
                 filename = os.path.join(
                     config.RECORDINGS_DIR, f"screen_{timestamp}.mp4"
                 )
-                fourcc = cv2.VideoWriter_fourcc(*config.SCREEN_CODEC)
-                writer = cv2.VideoWriter(
-                    filename, fourcc, config.SCREEN_FPS, (width, height)
-                )
+                writer, used_codec = self._open_writer(filename, width, height)
                 # Check if VideoWriter was successfully initialized
-                if not writer.isOpened():
-                    logger.error(
-                        "Failed to initialize VideoWriter for screen recording. "
-                        "Codec: %s, Resolution: %dx%d. Retrying in 30s.",
-                        config.SCREEN_CODEC, width, height
-                    )
+                if writer is None:
                     self._stop_event.wait(30)
                     continue
-                # Record in 10-minute segments
+                # Record in segments
                 segment_end = time.time() + config.SEGMENT_DURATION_SECONDS
                 try:
                     while not self._stop_event.is_set() and time.time() < segment_end:

