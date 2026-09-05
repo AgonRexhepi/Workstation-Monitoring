@@ -74,6 +74,15 @@ class ScreenRecorder:
                 writer = cv2.VideoWriter(
                     filename, fourcc, config.SCREEN_FPS, (width, height)
                 )
+                # Check if VideoWriter was successfully initialized
+                if not writer.isOpened():
+                    logger.error(
+                        "Failed to initialize VideoWriter for screen recording. "
+                        "Codec: %s, Resolution: %dx%d. Retrying in 30s.",
+                        config.SCREEN_CODEC, width, height
+                    )
+                    self._stop_event.wait(30)
+                    continue
                 # Record in 10-minute segments
                 segment_end = time.time() + config.SEGMENT_DURATION_SECONDS
                 try:
@@ -96,14 +105,16 @@ class ScreenRecorder:
         os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)
         with mss.mss() as sct:
             monitor = sct.monitors[1]
+            counter = 0
             while not self._stop_event.wait(config.SCREENSHOT_INTERVAL):
                 try:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = os.path.join(
-                        config.SCREENSHOTS_DIR, f"screenshot_{timestamp}.png"
+                        config.SCREENSHOTS_DIR, f"screenshot_{timestamp}_{counter:04d}.png"
                     )
                     img = sct.grab(monitor)
                     mss.tools.to_png(img.rgb, img.size, output=filename)
-                    logger.debug("Screenshot saved: %s", filename)
+                    logger.info("Screenshot saved: %s", filename)
+                    counter += 1
                 except Exception:
                     logger.exception("Error taking screenshot")

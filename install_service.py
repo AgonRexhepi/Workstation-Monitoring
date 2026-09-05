@@ -98,7 +98,7 @@ def _verify_service_runtime_imports():
     PythonService commonly runs under SCM service accounts.
     """
     code = (
-        "import importlib, sys; "
+        "import importlib.util, sys; "
         "mods=['cv2','flask','mss','numpy','psutil','pynput']; "
         "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
         "print(','.join(missing)); "
@@ -110,7 +110,9 @@ def _verify_service_runtime_imports():
         text=True,
     )
     if result.returncode != 0:
-        missing = (result.stdout or "").strip() or "unknown modules"
+        missing = (result.stdout or "").strip()
+        if not missing:
+            missing = ((result.stderr or "").strip() or "unknown modules")
         logger.error(
             "Service runtime is missing required modules: %s",
             missing,

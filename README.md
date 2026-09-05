@@ -72,8 +72,14 @@ Workstation-Monitoring/
 
 ```powershell
 pip install -r requirements.txt
-# Post-install step required by pywin32:
-python -m pywin32_postinstall -install
+# Verify pywin32 is importable by the interpreter used for service commands:
+python -c "import win32service, win32serviceutil; print('pywin32 OK')"
+```
+
+If the import check fails, reinstall pywin32 explicitly:
+
+```powershell
+python -m pip install --upgrade pywin32
 ```
 
 Important: for Windows Service mode, install dependencies from an elevated shell
