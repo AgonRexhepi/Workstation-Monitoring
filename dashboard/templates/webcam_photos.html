@@ -5,94 +5,70 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0">Webcam Photos</h2>
+  <h2 class="mb-0">Webcam Photos</h2>
 </div>
 
 
 <!-- Filters -->
 <div class="card mb-4">
-    <div class="card-body">
+  <div class="card-body">
 
-        <form method="GET" class="row g-3 align-items-end">
+    <form method="GET" class="row g-3 align-items-end">
 
-            <!-- Search -->
-            <div class="col-md-4">
+      <!-- Search -->
+      <div class="col-md-4">
 
-                <label for="search" class="form-label">
-                    Search
-                </label>
+        <label for="search" class="form-label">
+          Search
+        </label>
 
-                <input
-                    type="text"
-                    class="form-control"
-                    id="search"
-                    name="search"
-                    value="{{ search }}"
-                    placeholder="Search by filename or date..."
-                >
+        <input type="text" class="form-control" id="search" name="search" value="{{ search }}"
+          placeholder="Search by filename or date...">
 
-            </div>
+      </div>
 
 
-            <!-- Date Time From -->
-            <div class="col-md-3">
+      <!-- Date Time From -->
+      <div class="col-md-3">
 
-                <label for="date_from" class="form-label">
-                    Date Time From
-                </label>
+        <label for="date_from" class="form-label">
+          Date Time From
+        </label>
 
-                <input
-                    type="datetime-local"
-                    class="form-control"
-                    id="date_from"
-                    name="date_from"
-                    value="{{ date_from }}"
-                >
+        <input type="datetime-local" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
 
-            </div>
+      </div>
 
 
-            <!-- Date Time To -->
-            <div class="col-md-3">
+      <!-- Date Time To -->
+      <div class="col-md-3">
 
-                <label for="date_to" class="form-label">
-                    Date Time To
-                </label>
+        <label for="date_to" class="form-label">
+          Date Time To
+        </label>
 
-                <input
-                    type="datetime-local"
-                    class="form-control"
-                    id="date_to"
-                    name="date_to"
-                    value="{{ date_to }}"
-                >
+        <input type="datetime-local" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
 
-            </div>
+      </div>
 
 
-            <!-- Buttons -->
-            <div class="col-md-2 d-flex gap-2">
+      <!-- Buttons -->
+      <div class="col-md-2 d-flex gap-2">
 
-                <button
-                    type="submit"
-                    class="btn btn-primary"
-                >
-                    <i class="bi bi-funnel"></i>
-                    Filter
-                </button>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-funnel"></i>
+          Filter
+        </button>
 
-                <a
-                    href="{{ url_for('webcam_photos') }}"
-                    class="btn btn-outline-secondary"
-                >
-                    Clear
-                </a>
+        <a href="{{ url_for('webcam_photos') }}" class="btn btn-outline-secondary">
+          Clear
+        </a>
 
-            </div>
+      </div>
 
-        </form>
+    </form>
 
-    </div>
+  </div>
 </div>
 
 
@@ -100,135 +76,110 @@
 
 <div class="table-responsive">
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div class="text-muted small">
-            Showing {{ pagination.start_index + 1 }}-{{ pagination.start_index + items|length }} of {{ pagination.total_items }}
-        </div>
-        <div class="text-muted small">
-            Page {{ pagination.page }} of {{ pagination.total_pages }}
-        </div>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="text-muted small">
+      Showing {{ pagination.start_index + 1 }}-{{ pagination.start_index + items|length }} of {{ pagination.total_items
+      }}
     </div>
+    <div class="text-muted small">
+      Page {{ pagination.page }} of {{ pagination.total_pages }}
+    </div>
+  </div>
 
-    <table class="table table-hover table-bordered align-middle">
+  <table class="table table-hover table-bordered align-middle">
 
-        <thead class="table-dark">
+    <thead class="table-dark">
 
-            <tr>
-                <th style="width:70px;">
-                    NR
-                </th>
+      <tr>
+        <th style="width:70px;">
+          NR
+        </th>
 
-                <th style="width:220px;">
-                    Date Time
-                </th>
+        <th style="width:220px;">
+          Date Time
+        </th>
+        <th>
+          File Name
+        </th>
+        <th>
+          Thumbnail
+        </th>
 
-                <th>
-                    Thumbnail
-                </th>
-            </tr>
+      </tr>
 
-        </thead>
-
-
-        <tbody>
-
-        {% for item in items %}
-
-        <tr>
-
-            <!-- NR -->
-            <td>
-                {{ pagination.start_index + loop.index }}
-            </td>
+    </thead>
 
 
-            <!-- Date Time -->
-            <td>
-                <span class="fw-semibold">
-                    {{ item.modified }}
-                </span>
-            </td>
+    <tbody>
+
+      {% for item in items %}
+
+      <tr>
+
+        <!-- NR -->
+        <td>
+          {{ pagination.start_index + loop.index }}
+        </td>
 
 
-            <!-- Thumbnail -->
-            <td>
+        <!-- Date Time -->
+        <td>
+          <span class="fw-semibold">
+            {{ item.modified }}
+          </span>
+        </td>
+        <td>
+          {{ item.name }}
+        </td>
+        <!-- Thumbnail -->
+        <td>
 
-                <div class="d-flex align-items-center gap-3">
+          <a href="{{ url_for('view_image', path=item.path) }}" target="_blank">
 
-                    <a
-                        href="{{ url_for('view_image', path=item.path) }}"
-                        target="_blank"
-                    >
-
-                        <img
-                            src="{{ url_for('view_image', path=item.path) }}"
-                            alt="{{ item.name }}"
-                            loading="lazy"
-                            class="img-thumbnail"
-                            style="
+            <img src="{{ url_for('view_image', path=item.path) }}" alt="{{ item.name }}" loading="lazy"
+              class="img-thumbnail" style="
                                 width: 180px;
                                 height: 110px;
                                 object-fit: contain;
                                 background: #000;
-                            "
-                        >
+                            ">
 
-                    </a>
-
-
-                    <div>
-
-                        <div class="small text-muted">
-                            {{ item.name }}
-                        </div>
+          </a>
+        </td>
 
 
-                        <a
-                            class="btn btn-sm btn-outline-primary mt-2"
-                            href="{{ url_for('download', path=item.path) }}"
-                        >
-                            <i class="bi bi-download"></i>
-                            Download
-                        </a>
+      </tr>
 
-                    </div>
+      {% endfor %}
 
-                </div>
+    </tbody>
 
-            </td>
-
-        </tr>
-
-        {% endfor %}
-
-        </tbody>
-
-    </table>
+  </table>
 
 </div>
 
 {% if pagination.total_pages > 1 %}
 <nav aria-label="Webcam photos pages" class="mt-3">
-    <ul class="pagination justify-content-center">
-        <li class="page-item{% if not pagination.has_prev %} disabled{% endif %}">
-            <a class="page-link" href="{{ pagination_links.prev_url or '#' }}">Previous</a>
-        </li>
-        {% for page_link in pagination_links.pages %}
-        <li class="page-item{% if page_link.active %} active{% endif %}">
-            <a class="page-link" href="{{ page_link.url }}">{{ page_link.number }}</a>
-        </li>
-        {% endfor %}
-        <li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
-            <a class="page-link" href="{{ pagination_links.next_url or '#' }}">Next</a>
-        </li>
-    </ul>
+  <ul class="pagination justify-content-center">
+    <li class="page-item{% if not pagination.has_prev %} disabled{% endif %}">
+      <a class="page-link" href="{{ pagination_links.prev_url or '#' }}">Previous</a>
+    </li>
+    {% for page_link in pagination_links.pages %}
+    <li class="page-item{% if page_link.active %} active{% endif %}">
+      <a class="page-link" href="{{ page_link.url }}">{{ page_link.number }}</a>
+    </li>
+    {% endfor %}
+    <li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
+      <a class="page-link" href="{{ pagination_links.next_url or '#' }}">Next</a>
+    </li>
+  </ul>
 </nav>
 {% endif %}
 
 {% else %}
 
 <div class="alert alert-secondary">
-    No webcam photos found.
+  No webcam photos found.
 </div>
 
 {% endif %}

@@ -40,7 +40,7 @@ def ensure_directories():
 class StorageManager:
     """Periodically enforces the storage retention policy."""
 
-    def __init__(self, cleanup_hour: int = 8):
+    def __init__(self, cleanup_hour: int = config.CLEANUP_HOUR):
         self._cleanup_hour = cleanup_hour
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -278,7 +278,7 @@ def storage_summary() -> dict:
                 total += path.stat().st_size
     return {
         "total_mb": round(total / (1024 * 1024), 2),
-        "max_mb": config.MAX_STORAGE_MB,
+        "max_mb": round(config.MAX_STORAGE_MB / 1024, 2),
         "recordings": len(list_screen_recordings()),
         "webcam": len(list_webcam_recordings()),
         "screenshots": len(screenshots),

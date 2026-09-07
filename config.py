@@ -76,7 +76,11 @@ SEGMENT_DURATION_SECONDS = 1800  # 30-minute video segments
 # Storage / retention
 # ------------------------------------------------------------------
 # DELETE_DATA: files older than this many days are automatically purged.
-DELETE_DATA = 30
+DELETE_DATA = 365
+
+# CLEANUP_HOUR: the hour of the day when the storage cleanup runs (0-23)
+CLEANUP_HOUR = 8
+
 # Maximum total disk usage in MB before oldest files are removed
 MAX_STORAGE_MB = 10_240           # 10 GB
 
