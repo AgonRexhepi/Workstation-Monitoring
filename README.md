@@ -161,3 +161,37 @@ pytest tests/ -v
 
 This application is intended **strictly for authorised academic examination monitoring**.  
 Students must be informed **before** the exam that workstation monitoring is active and that screen, webcam, and keyboard activity may be recorded in accordance with applicable academic regulations and data-protection legislation.
+
+
+--VENV
+cd C:\Users\user423\Downloads\Workstation-Monitoring-main
+
+python.exe -m venv .venv
+
+--Nese eshte e Script diable
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+.\.venv\Scripts\Activate.ps1
+
+--
+
+python -m pip install --upgrade pip
+
+python -m pip install -r requirements.txt
+
+--per offline
+python -m pip install --no-index --find-links=offline_packages -r requirements-lock.txt
+
+test
+python -s -c "import cv2, flask, mss, numpy, psutil, pynput; print('SERVICE RUNTIME OK')"
+
+
+Ekzekuto:
+
+python install_service.py
+
+
+
+----
+sc.exe start WorkstationMonitorSvc
+sc.exe query WorkstationMonitorSvc

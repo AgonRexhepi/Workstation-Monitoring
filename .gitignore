@@ -1,0 +1,88 @@
+# Python bytecode:
+*.py[co]
+__pycache__/
+
+# Packaging files:
+*.egg*
+
+# Editor temp files:
+*.swp
+*~
+
+# Sphinx docs:
+./build/
+
+
+# Logs:
+*.log
+.cache/
+.ipython/
+.local/
+
+# Other stuff/files:
+.coverage
+.bash_history
+.python_history
+.pythonhist
+.DS_Store
+.cache/
+.ipython/
+.local/
+.ssh/
+/tmp/
+.ropeproject/
+db.
+
+/db_dump/
+*/static_root/*
+!/**/.gitkeep
+
+
+../.idea/*
+/.idea/*static_root/*
+.idea
+myenv/
+myenv
+venv/
+.venv/
+/venv/
+/env/
+/myenv/
+/env3/
+static_root/*
+
+*.mo
+
+/node_modules/
+
+#ignore thumbnails created by windows
+Thumbs.db
+
+# VSCode
+__pycache__
+./__pycache__/*
+__pycache__/*
+/__pycache__/
+.vscode/
+*.obj
+*.exe
+*.pdb
+*.user
+*.aps
+*.pch
+*.vspscc
+*_i.c
+*_p.c
+*.ncb
+*.suo
+*.tlb
+*.tlh
+*.bak
+*.cache
+*.ilk
+*.log
+*.dll
+*.lib
+*.sbr
+*.pyc
+*.cpython*
