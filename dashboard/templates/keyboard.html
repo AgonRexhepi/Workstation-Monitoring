@@ -1,30 +1,146 @@
 {% extends "base.html" %}
+
 {% block title %}Keyboard Log – Workstation Monitor{% endblock %}
+
 {% block content %}
-<h2>Keyboard Activity Log</h2>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Keyboard Activity Log</h2>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+
+        <form method="GET" class="row g-3 align-items-end">
+
+            <!-- Search -->
+            <div class="col-md-4">
+                <label for="search" class="form-label">Search</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="search"
+                    name="search"
+                    value="{{ request.args.get('search', '') }}"
+                    placeholder="Search by date..."
+                >
+            </div>
+
+            <!-- Date From -->
+            <div class="col-md-3">
+                <label for="date_from" class="form-label">Date From</label>
+                <input
+                    type="date"
+                    class="form-control"
+                    id="date_from"
+                    name="date_from"
+                    value="{{ request.args.get('date_from', '') }}"
+                >
+            </div>
+
+            <!-- Date To -->
+            <div class="col-md-3">
+                <label for="date_to" class="form-label">Date To</label>
+                <input
+                    type="date"
+                    class="form-control"
+                    id="date_to"
+                    name="date_to"
+                    value="{{ request.args.get('date_to', '') }}"
+                >
+            </div>
+
+            <!-- Buttons -->
+            <div class="col-md-2 d-flex gap-2">
+
+                <button type="submit" class="btn btn-primary">
+                    Filter
+                </button>
+
+                <a
+                    href="{{ url_for('keyboard_log') }}"
+                    class="btn btn-outline-secondary"
+                >
+                    Clear
+                </a>
+
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+
 {% if days %}
-  {% for day in days %}
-  <h5 class="mt-4">{{ day.date }}</h5>
-  <div class="table-responsive">
-    <table class="table table-sm table-striped table-bordered">
-      <thead class="table-dark">
+
+<div class="table-responsive">
+
+    <table class="table table-hover table-bordered align-middle">
+
+        <thead class="table-dark">
+            <tr>
+                <th style="width:70px;">NR</th>
+                <th>Date</th>
+                <th style="width:150px;">Entries</th>
+                <th style="width:120px;">Action</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+        {% for day in days %}
+
         <tr>
-          <th style="width:130px">Time</th>
-          <th>Key</th>
+
+            <!-- NR -->
+            <td>
+                {{ loop.index }}
+            </td>
+
+            <!-- Date -->
+            <td>
+                <strong>{{ day.date }}</strong>
+            </td>
+
+            <!-- Number of entries -->
+            <td>
+                <span class="badge bg-secondary">
+                    {{ day.entries|length }}
+                </span>
+            </td>
+
+            <!-- View -->
+            <td>
+
+                <a
+                    href="{{ url_for('single_log', date=day.date) }}"
+                    class="btn btn-sm btn-outline-primary"
+                    title="View log"
+                >
+                    <i class="bi bi-eye"></i>
+                    View
+                </a>
+
+            </td>
+
         </tr>
-      </thead>
-      <tbody>
-        {% for entry in day.entries %}
-        <tr>
-          <td class="text-monospace small">{{ entry.time }}</td>
-          <td class="text-monospace small">{{ entry.key }}</td>
-        </tr>
+
         {% endfor %}
-      </tbody>
+
+        </tbody>
+
     </table>
-  </div>
-  {% endfor %}
+
+</div>
+
 {% else %}
-<p class="text-muted">No keyboard log data found.</p>
+
+<div class="alert alert-secondary">
+    No keyboard log data found.
+</div>
+
 {% endif %}
+
 {% endblock %}

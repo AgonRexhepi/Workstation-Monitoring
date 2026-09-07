@@ -1,27 +1,209 @@
 {% extends "base.html" %}
+
 {% block title %}Webcam Photos – Workstation Monitor{% endblock %}
+
 {% block content %}
-<h2>Webcam Photos</h2>
-{% if items %}
-<div class="row g-3">
-  {% for item in items %}
-  <div class="col-md-4">
-    <div class="card">
-      <img src="{{ url_for('view_image', path=item.path) }}"
-           class="card-img-top"
-           alt="{{ item.name }}"
-           loading="lazy"
-           style="max-height:200px;object-fit:contain;background:#000;">
-      <div class="card-body">
-        <p class="card-text small text-muted">{{ item.modified }}</p>
-        <a class="btn btn-sm btn-outline-primary"
-           href="{{ url_for('download', path=item.path) }}">Download {{ item.name }}</a>
-      </div>
-    </div>
-  </div>
-  {% endfor %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Webcam Photos</h2>
 </div>
+
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+
+        <form method="GET" class="row g-3 align-items-end">
+
+            <!-- Search -->
+            <div class="col-md-4">
+
+                <label for="search" class="form-label">
+                    Search
+                </label>
+
+                <input
+                    type="text"
+                    class="form-control"
+                    id="search"
+                    name="search"
+                    value="{{ request.args.get('search', '') }}"
+                    placeholder="Search by filename or date..."
+                >
+
+            </div>
+
+
+            <!-- Date Time From -->
+            <div class="col-md-3">
+
+                <label for="date_from" class="form-label">
+                    Date Time From
+                </label>
+
+                <input
+                    type="datetime-local"
+                    class="form-control"
+                    id="date_from"
+                    name="date_from"
+                    value="{{ request.args.get('date_from', '') }}"
+                >
+
+            </div>
+
+
+            <!-- Date Time To -->
+            <div class="col-md-3">
+
+                <label for="date_to" class="form-label">
+                    Date Time To
+                </label>
+
+                <input
+                    type="datetime-local"
+                    class="form-control"
+                    id="date_to"
+                    name="date_to"
+                    value="{{ request.args.get('date_to', '') }}"
+                >
+
+            </div>
+
+
+            <!-- Buttons -->
+            <div class="col-md-2 d-flex gap-2">
+
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                >
+                    <i class="bi bi-funnel"></i>
+                    Filter
+                </button>
+
+                <a
+                    href="{{ url_for('webcam_photos') }}"
+                    class="btn btn-outline-secondary"
+                >
+                    Clear
+                </a>
+
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+
+{% if items %}
+
+<div class="table-responsive">
+
+    <table class="table table-hover table-bordered align-middle">
+
+        <thead class="table-dark">
+
+            <tr>
+                <th style="width:70px;">
+                    NR
+                </th>
+
+                <th style="width:220px;">
+                    Date Time
+                </th>
+
+                <th>
+                    Thumbnail
+                </th>
+            </tr>
+
+        </thead>
+
+
+        <tbody>
+
+        {% for item in items %}
+
+        <tr>
+
+            <!-- NR -->
+            <td>
+                {{ loop.index }}
+            </td>
+
+
+            <!-- Date Time -->
+            <td>
+                <span class="fw-semibold">
+                    {{ item.modified }}
+                </span>
+            </td>
+
+
+            <!-- Thumbnail -->
+            <td>
+
+                <div class="d-flex align-items-center gap-3">
+
+                    <a
+                        href="{{ url_for('view_image', path=item.path) }}"
+                        target="_blank"
+                    >
+
+                        <img
+                            src="{{ url_for('view_image', path=item.path) }}"
+                            alt="{{ item.name }}"
+                            loading="lazy"
+                            class="img-thumbnail"
+                            style="
+                                width: 180px;
+                                height: 110px;
+                                object-fit: contain;
+                                background: #000;
+                            "
+                        >
+
+                    </a>
+
+
+                    <div>
+
+                        <div class="small text-muted">
+                            {{ item.name }}
+                        </div>
+
+
+                        <a
+                            class="btn btn-sm btn-outline-primary mt-2"
+                            href="{{ url_for('download', path=item.path) }}"
+                        >
+                            <i class="bi bi-download"></i>
+                            Download
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </td>
+
+        </tr>
+
+        {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+
 {% else %}
-<p class="text-muted">No webcam photos found.</p>
+
+<div class="alert alert-secondary">
+    No webcam photos found.
+</div>
+
 {% endif %}
+
 {% endblock %}
