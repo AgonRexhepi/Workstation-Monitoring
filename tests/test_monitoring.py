@@ -25,10 +25,14 @@ sys.modules.setdefault("mss.tools", MagicMock())
 cv2_mock = MagicMock()
 sys.modules.setdefault("cv2", cv2_mock)
 
+# numpy – required by cv2 and screen.py
+sys.modules.setdefault("numpy", MagicMock())
+
 # pynput (keyboard listener) – needs a display / uinput on Linux
 pynput_mock = MagicMock()
 sys.modules.setdefault("pynput", pynput_mock)
 sys.modules.setdefault("pynput.keyboard", pynput_mock.keyboard)
+sys.modules.setdefault("pynput.mouse", pynput_mock.mouse)
 
 # pywin32 – Windows only
 sys.modules.setdefault("win32serviceutil", MagicMock())
@@ -59,11 +63,14 @@ class TestConfig(unittest.TestCase):
             "DASHBOARD_HOST",
             "DASHBOARD_PORT",
             "MAX_STORAGE_MB",
+            "DELETE_DATA",
             # Feature flags
             "WEBCAM_RECORD",
             "WEBCAM_PHOTO",
+            "WEBCAM_PHOTO_ON_ACTIVITY",
             "SCREEN_RECORD",
             "SCREEN_SHOT",
+            "SCREENSHOT_ON_ACTIVITY",
             "KEY_LOGGER",
             # Webcam photo settings
             "WEBCAM_PHOTOS_DIR",
@@ -99,12 +106,14 @@ class TestStorageManager(unittest.TestCase):
             "SCREENSHOTS_DIR": config.SCREENSHOTS_DIR,
             "LOGS_DIR": config.LOGS_DIR,
             "WEBCAM_DIR": config.WEBCAM_DIR,
+            "WEBCAM_PHOTOS_DIR": config.WEBCAM_PHOTOS_DIR,
             "KEYBOARD_LOG_FILE": config.KEYBOARD_LOG_FILE,
         }
         config.RECORDINGS_DIR = os.path.join(self._tmp, "recordings")
         config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
+        config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
         config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
 
     def tearDown(self):
@@ -114,7 +123,7 @@ class TestStorageManager(unittest.TestCase):
 
     def test_ensure_directories_creates_dirs(self):
         store.ensure_directories()
-        for attr in ("RECORDINGS_DIR", "SCREENSHOTS_DIR", "LOGS_DIR", "WEBCAM_DIR"):
+        for attr in ("RECORDINGS_DIR", "SCREENSHOTS_DIR", "LOGS_DIR", "WEBCAM_DIR", "WEBCAM_PHOTOS_DIR"):
             self.assertTrue(
                 os.path.isdir(getattr(config, attr)), f"{attr} not created"
             )
@@ -124,6 +133,7 @@ class TestStorageManager(unittest.TestCase):
         self.assertEqual(store.list_screen_recordings(), [])
         self.assertEqual(store.list_webcam_recordings(), [])
         self.assertEqual(store.list_screenshots(), [])
+        self.assertEqual(store.list_webcam_photos(), [])
 
     def test_list_files_found(self):
         store.ensure_directories()
@@ -159,15 +169,15 @@ class TestStorageManager(unittest.TestCase):
     def test_storage_summary_keys(self):
         store.ensure_directories()
         summary = store.storage_summary()
-        for key in ("total_mb", "max_mb", "recordings", "webcam", "screenshots"):
+        for key in ("total_mb", "max_mb", "recordings", "webcam", "screenshots", "webcam_photos"):
             self.assertIn(key, summary)
 
     def test_age_policy_removes_old_file(self):
         store.ensure_directories()
         old_file = Path(config.RECORDINGS_DIR) / "old.mp4"
         old_file.write_bytes(b"x")
-        # Set mtime to 31 days ago
-        old_time = time.time() - (config.MAX_RECORDING_AGE_DAYS + 1) * 86400
+        # Set mtime to DELETE_DATA + 1 days ago
+        old_time = time.time() - (config.DELETE_DATA + 1) * 86400
         os.utime(old_file, (old_time, old_time))
 
         mgr = store.StorageManager()
@@ -206,6 +216,7 @@ class TestDashboard(unittest.TestCase):
         config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
+        config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
         config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
         store.ensure_directories()
 
@@ -253,6 +264,11 @@ class TestDashboard(unittest.TestCase):
     def test_webcam_page(self):
         self._login()
         resp = self._client.get("/webcam")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_webcam_photos_page(self):
+        self._login()
+        resp = self._client.get("/webcam_photos")
         self.assertEqual(resp.status_code, 200)
 
     def test_screenshots_page(self):
@@ -318,6 +334,53 @@ class TestWebcamPhotoCapture(unittest.TestCase):
         cap.start()  # second call should be a no-op
         self.assertEqual(id(cap._thread), thread_id)
         cap.stop()
+
+
+class TestScreenRecorderScreenshot(unittest.TestCase):
+    """Tests for the activity-triggered screenshot mode in ScreenRecorder."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._orig_screenshots_dir = config.SCREENSHOTS_DIR
+        self._orig_interval = config.SCREENSHOT_INTERVAL
+        self._orig_on_activity = config.SCREENSHOT_ON_ACTIVITY
+        config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
+        config.SCREENSHOT_INTERVAL = 60
+        config.SCREENSHOT_ON_ACTIVITY = True
+
+    def tearDown(self):
+        config.SCREENSHOTS_DIR = self._orig_screenshots_dir
+        config.SCREENSHOT_INTERVAL = self._orig_interval
+        config.SCREENSHOT_ON_ACTIVITY = self._orig_on_activity
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_start_stop_activity_mode(self):
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        self.assertTrue(rec._screenshot_thread.is_alive())
+        rec.stop()
+        rec._screenshot_thread.join(timeout=5)
+        self.assertFalse(rec._screenshot_thread.is_alive())
+
+    def test_start_stop_timer_mode(self):
+        config.SCREENSHOT_ON_ACTIVITY = False
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        self.assertTrue(rec._screenshot_thread.is_alive())
+        rec.stop()
+        rec._screenshot_thread.join(timeout=5)
+        self.assertFalse(rec._screenshot_thread.is_alive())
+
+    def test_double_start_is_idempotent(self):
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        thread_id = id(rec._screenshot_thread)
+        rec.start(record=False, screenshot=True)  # second call should be a no-op
+        self.assertEqual(id(rec._screenshot_thread), thread_id)
+        rec.stop()
 
 
 if __name__ == "__main__":

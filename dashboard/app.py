@@ -18,7 +18,7 @@ from flask import (
     redirect,
     url_for,
     session,
-    send_file,
+    send_from_directory,
     abort,
     flash,
 )
@@ -76,6 +76,42 @@ def logout():
 # Dashboard routes
 # ------------------------------------------------------------------
 
+def _is_safe(target: str, allowed_dirs: list) -> bool:
+    """Return True if *target* is strictly inside one of the *allowed_dirs*.
+
+    Uses ``Path.is_relative_to`` (Python 3.9+) for strict containment so that
+    a sibling path such as ``/data/webcam_photos`` cannot be confused with
+    ``/data/webcam`` the way a plain ``commonpath`` prefix check can.
+    """
+    target_path = Path(target)
+    for allowed_dir in allowed_dirs:
+        try:
+            if target_path.is_relative_to(allowed_dir):
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
+def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
+    """Validate *abs_path* is inside an allowed directory, then serve it.
+
+    The directory passed to ``send_from_directory`` is taken from the
+    *allowed_dirs* list (a hardcoded value), not from the user-provided path,
+    so the taint from user input does not reach the filesystem call.
+    """
+    target_path = Path(abs_path)
+    for allowed_dir in allowed_dirs:
+        try:
+            if target_path.is_relative_to(allowed_dir):
+                relpath = os.path.relpath(abs_path, allowed_dir)
+                # send_from_directory raises 404 if the file does not exist.
+                return send_from_directory(allowed_dir, relpath, as_attachment=as_attachment)
+        except (TypeError, ValueError):
+            pass
+    abort(403)
+
+
 @app.route("/")
 @login_required
 def index():
@@ -98,11 +134,31 @@ def webcam():
     return render_template("recordings.html", items=items, title="Webcam Recordings")
 
 
+@app.route("/webcam_photos")
+@login_required
+def webcam_photos():
+    items = store.list_webcam_photos()
+    return render_template("webcam_photos.html", items=items)
+
+
 @app.route("/screenshots")
 @login_required
 def screenshots():
     items = store.list_screenshots()
     return render_template("screenshots.html", items=items)
+
+
+@app.route("/view_image")
+@login_required
+def view_image():
+    """Serve an image file inline for in-browser preview."""
+    path = request.args.get("path", "")
+    abs_path = os.path.realpath(os.path.abspath(path))
+    allowed = [
+        os.path.realpath(os.path.abspath(config.SCREENSHOTS_DIR)),
+        os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
+    ]
+    return _safe_send(abs_path, allowed)
 
 
 @app.route("/keyboard")
@@ -132,24 +188,10 @@ def download():
         os.path.realpath(os.path.abspath(config.RECORDINGS_DIR)),
         os.path.realpath(os.path.abspath(config.SCREENSHOTS_DIR)),
         os.path.realpath(os.path.abspath(config.WEBCAM_DIR)),
+        os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
         os.path.realpath(os.path.abspath(config.LOGS_DIR)),
     ]
-
-    def _is_safe(target: str, allowed_dirs: list) -> bool:
-        for allowed_dir in allowed_dirs:
-            try:
-                if os.path.commonpath([target, allowed_dir]) == allowed_dir:
-                    return True
-            except ValueError:
-                # commonpath raises ValueError on mixed drive letters (Windows)
-                pass
-        return False
-
-    if not _is_safe(abs_path, allowed):
-        abort(403)
-    if not os.path.isfile(abs_path):
-        abort(404)
-    return send_file(abs_path, as_attachment=True)
+    return _safe_send(abs_path, allowed, as_attachment=True)
 
 
 # ------------------------------------------------------------------

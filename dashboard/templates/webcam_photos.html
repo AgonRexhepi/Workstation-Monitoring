@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Screenshots – Workstation Monitor{% endblock %}
+{% block title %}Webcam Photos – Workstation Monitor{% endblock %}
 {% block content %}
-<h2>Screenshots</h2>
+<h2>Webcam Photos</h2>
 {% if items %}
 <div class="row g-3">
   {% for item in items %}
@@ -22,6 +22,6 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="text-muted">No screenshots found.</p>
+<p class="text-muted">No webcam photos found.</p>
 {% endif %}
 {% endblock %}

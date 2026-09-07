@@ -22,6 +22,7 @@ def _all_dirs():
         config.SCREENSHOTS_DIR,
         config.LOGS_DIR,
         config.WEBCAM_DIR,
+        config.WEBCAM_PHOTOS_DIR,
     ]
 
 
@@ -67,8 +68,14 @@ class StorageManager:
             except Exception:
                 logger.exception("Error during storage cleanup")
 
+    def run_once(self):
+        """Run a single cleanup pass (age + size) synchronously."""
+        self._enforce_age_policy()
+        self._enforce_size_policy()
+
     def _enforce_age_policy(self):
-        cutoff = time.time() - config.MAX_RECORDING_AGE_DAYS * 86400
+        # Use DELETE_DATA (days) as the retention period
+        cutoff = time.time() - config.DELETE_DATA * 86400
         for directory in _all_dirs():
             for path in Path(directory).rglob("*"):
                 if path.is_file() and path.stat().st_mtime < cutoff:
@@ -128,12 +135,24 @@ def list_screenshots() -> list[dict]:
     return _list_files(config.SCREENSHOTS_DIR, "*.png")
 
 
+def list_webcam_photos() -> list[dict]:
+    return _list_files(config.WEBCAM_PHOTOS_DIR, "*.jpg")
+
+
 def get_keyboard_log_lines(max_lines: int = 500) -> list[str]:
-    log_path = Path(config.KEYBOARD_LOG_FILE)
-    if not log_path.exists():
+    """Return the last *max_lines* lines across all daily keyboard log files."""
+    base = Path(config.LOGS_DIR)
+    if not base.exists():
         return []
-    with log_path.open("r", encoding="utf-8") as fh:
-        lines = fh.readlines()
+    # Collect all keyboard.log files sorted oldest→newest
+    log_files = sorted(base.rglob("keyboard.log"), key=lambda p: p.stat().st_mtime)
+    lines: list[str] = []
+    for log_path in log_files:
+        try:
+            with log_path.open("r", encoding="utf-8") as fh:
+                lines.extend(fh.readlines())
+        except OSError:
+            pass
     return lines[-max_lines:]
 
 
@@ -146,7 +165,11 @@ def _list_files(
     base = Path(directory)
     if not base.exists():
         return results
-    for path in sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True):
+    # rglob recurses into YYYY/MM/DD subdirectories created by dated_subdir.
+    # For typical monitoring deployments (≤12 months, daily dirs) the tree
+    # depth is shallow (≤3 levels) and the file count manageable, so the
+    # added stat overhead is acceptable.
+    for path in sorted(base.rglob(pattern), key=lambda p: p.stat().st_mtime, reverse=True):
         if exclude_suffixes and any(path.name.endswith(suf) for suf in exclude_suffixes):
             continue
         results.append(_file_info(path))
@@ -165,4 +188,5 @@ def storage_summary() -> dict:
         "recordings": len(list_screen_recordings()),
         "webcam": len(list_webcam_recordings()),
         "screenshots": len(list_screenshots()),
+        "webcam_photos": len(list_webcam_photos()),
     }
