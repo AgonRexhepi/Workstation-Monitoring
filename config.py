@@ -61,7 +61,7 @@ DASHBOARD_HOST = "127.0.0.1"     # listen on loopback only
 DASHBOARD_PORT = 5000
 # Change this to a strong secret key in production
 DASHBOARD_SECRET_KEY = os.environ.get(
-    "MONITOR_SECRET_KEY", "change-me-in-production"
+    "MONITOR_SECRET_KEY", "S3cr3tK3yD43H804R6"
 )
 # Supervisor password – set via environment variable in production.
 # The plain-text value is compared directly; use a long, random password.

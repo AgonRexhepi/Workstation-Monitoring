@@ -138,7 +138,55 @@ def webcam():
 @login_required
 def webcam_photos():
     items = store.list_webcam_photos()
-    return render_template("webcam_photos.html", items=items)
+
+    search = request.args.get("search", "").strip().lower()
+    date_from_str = request.args.get("date_from", "").strip()
+    date_to_str = request.args.get("date_to", "").strip()
+
+    date_from = None
+    date_to = None
+
+    try:
+        if date_from_str:
+            date_from = datetime.fromisoformat(date_from_str).timestamp()
+
+        if date_to_str:
+            date_to = datetime.fromisoformat(date_to_str).timestamp()
+
+    except ValueError:
+        flash("Invalid date/time format.", "danger")
+
+    filtered_items = []
+
+    for item in items:
+
+        # Search
+        if search:
+            name = str(item.get("name", "")).lower()
+            modified = str(item.get("modified", "")).lower()
+
+            if search not in name and search not in modified:
+                continue
+
+        # Date Time From
+        if date_from is not None:
+            if item.get("modified_timestamp", 0) < date_from:
+                continue
+
+        # Date Time To
+        if date_to is not None:
+            if item.get("modified_timestamp", 0) > date_to:
+                continue
+
+        filtered_items.append(item)
+
+    return render_template(
+        "webcam_photos.html",
+        items=filtered_items,
+        search=search,
+        date_from=date_from_str,
+        date_to=date_to_str
+    )
 
 
 @app.route("/screenshots")
@@ -164,8 +212,98 @@ def view_image():
 @app.route("/keyboard")
 @login_required
 def keyboard_log():
+    """
+    Display keyboard logs grouped by day.
+
+    Supports:
+        ?search=
+        ?date_from=YYYY-MM-DD
+        ?date_to=YYYY-MM-DD
+    """
+
     days = store.get_keyboard_log_by_day()
-    return render_template("keyboard.html", days=days)
+
+    search = request.args.get("search", "").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    filtered_days = []
+
+    for day in days:
+        day_date = str(day.get("date", ""))
+
+        # ----------------------------------------------------------
+        # Search by date
+        # ----------------------------------------------------------
+        if search and search not in day_date.lower():
+            continue
+
+        # ----------------------------------------------------------
+        # Date From
+        # ----------------------------------------------------------
+        if date_from and day_date < date_from:
+            continue
+
+        # ----------------------------------------------------------
+        # Date To
+        # ----------------------------------------------------------
+        if date_to and day_date > date_to:
+            continue
+
+        filtered_days.append(day)
+
+    return render_template(
+        "keyboard.html",
+        days=filtered_days
+    )
+
+
+@app.route("/keyboard/<date>")
+@login_required
+def single_log(date):
+    """
+    Display keyboard log entries for a single day.
+
+    Supports:
+        ?search=
+    """
+
+    days = store.get_keyboard_log_by_day()
+
+    selected_day = None
+
+    for day in days:
+        if str(day.get("date", "")) == date:
+            selected_day = day
+            break
+
+    # Day does not exist
+    if selected_day is None:
+        abort(404)
+
+    entries = selected_day.get("entries", [])
+
+    # --------------------------------------------------------------
+    # Search inside the keyboard log
+    # --------------------------------------------------------------
+    search = request.args.get("search", "").strip().lower()
+
+    if search:
+        filtered_entries = []
+
+        for entry in entries:
+            key = str(entry.get("key", ""))
+
+            if search in key.lower():
+                filtered_entries.append(entry)
+
+        entries = filtered_entries
+
+    return render_template(
+        "single_log.html",
+        date=date,
+        entries=entries
+    )
 
 
 @app.route("/system")
