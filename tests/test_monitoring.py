@@ -237,8 +237,8 @@ class TestStorageManager(unittest.TestCase):
         self.assertEqual(summary["screenshots_today"], 1)
         self.assertEqual(summary["webcam_photos"], 1)
         self.assertEqual(summary["webcam_photos_today"], 1)
-        self.assertEqual(summary["keylogger_entries"], 3)
-        self.assertEqual(summary["keylogger_entries_today"], 2)
+        self.assertEqual(summary["keylogger_days"], 2)
+        self.assertEqual(summary["keylogger_days_today"], 1)
 
     def test_age_policy_removes_old_file(self):
         store.ensure_directories()

@@ -265,9 +265,9 @@ def storage_summary() -> dict:
     screenshots = list_screenshots()
     webcam_photos = list_webcam_photos()
     keyboard_days = get_keyboard_log_by_day()
-    keylogger_entries = sum(len(day["entries"]) for day in keyboard_days)
-    keylogger_entries_today = sum(
-        len(day["entries"])
+    keylogger_days = len(keyboard_days)
+    keylogger_days_today = sum(
+        1
         for day in keyboard_days
         if day["date"] == today
     )
@@ -289,7 +289,7 @@ def storage_summary() -> dict:
         "webcam_photos_today": sum(
             1 for item in webcam_photos if item["modified"].startswith(today)
         ),
-        "keylogger_entries": keylogger_entries,
-        "keylogger_entries_today": keylogger_entries_today,
+        "keylogger_days": keylogger_days,
+        "keylogger_days_today": keylogger_days_today,
         "logs": len(list_logs()),
     }
