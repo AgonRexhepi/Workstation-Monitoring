@@ -167,24 +167,24 @@ class ScreenRecorder:
         if self._record_thread and self._record_thread.is_alive():
             logger.warning("ScreenRecorder already running")
             return
-        if self._screenshot_thread and self._screenshot_thread.is_alive():
-            logger.warning("ScreenRecorder screenshot already running")
-            return
         if record:
             self._record_thread = threading.Thread(
                 target=self._record_loop, daemon=True, name="screen-record"
             )
             self._record_thread.start()
         if screenshot:
-            if config.SCREENSHOT_ON_ACTIVITY:
-                self._start_screenshot_listeners()
-                target = self._screenshot_activity_loop
+            if self._screenshot_thread and self._screenshot_thread.is_alive():
+                logger.warning("ScreenRecorder screenshot already running")
             else:
-                target = self._screenshot_timer_loop
-            self._screenshot_thread = threading.Thread(
-                target=target, daemon=True, name="screen-screenshot"
-            )
-            self._screenshot_thread.start()
+                if config.SCREENSHOT_ON_ACTIVITY:
+                    self._start_screenshot_listeners()
+                    target = self._screenshot_activity_loop
+                else:
+                    target = self._screenshot_timer_loop
+                self._screenshot_thread = threading.Thread(
+                    target=target, daemon=True, name="screen-screenshot"
+                )
+                self._screenshot_thread.start()
         logger.info(
             "ScreenRecorder started (record=%s, screenshot=%s, activity_mode=%s)",
             record, screenshot, config.SCREENSHOT_ON_ACTIVITY,
@@ -362,10 +362,10 @@ class ScreenRecorder:
                     self._stop_event.wait(remaining)
                     if self._stop_event.is_set():
                         break
-                    self._screenshot_activity_event.clear()
-
-                if self._stop_event.is_set():
-                    break
+                # Cooldown (if any) has elapsed – take the screenshot now.
+                # Clear any activity that fired during the cooldown to avoid
+                # an immediate second capture on the next loop iteration.
+                self._screenshot_activity_event.clear()
 
                 try:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
