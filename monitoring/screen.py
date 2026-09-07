@@ -133,7 +133,7 @@ class ScreenRecorder:
     # Public API
     # ------------------------------------------------------------------
 
-    def start(self):
+    def start(self, record: bool = True, screenshot: bool = True):
         self._stop_event.clear()
         if _is_session_0():
             logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
@@ -160,15 +160,19 @@ class ScreenRecorder:
         if self._record_thread and self._record_thread.is_alive():
             logger.warning("ScreenRecorder already running")
             return
-        self._record_thread = threading.Thread(
-            target=self._record_loop, daemon=True, name="screen-record"
+        if record:
+            self._record_thread = threading.Thread(
+                target=self._record_loop, daemon=True, name="screen-record"
+            )
+            self._record_thread.start()
+        if screenshot:
+            self._screenshot_thread = threading.Thread(
+                target=self._screenshot_loop, daemon=True, name="screen-screenshot"
+            )
+            self._screenshot_thread.start()
+        logger.info(
+            "ScreenRecorder started (record=%s, screenshot=%s)", record, screenshot
         )
-        self._screenshot_thread = threading.Thread(
-            target=self._screenshot_loop, daemon=True, name="screen-screenshot"
-        )
-        self._record_thread.start()
-        self._screenshot_thread.start()
-        logger.info("ScreenRecorder started")
 
     def stop(self):
         self._stop_event.set()

