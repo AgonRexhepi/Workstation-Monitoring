@@ -18,11 +18,6 @@ from monitoring.utils import dated_subdir
 logger = logging.getLogger(__name__)
 
 
-def _dated_subdir(base_dir: str) -> str:
-    """Wrapper kept for backward compatibility; delegates to shared utility."""
-    return dated_subdir(base_dir)
-
-
 class WebcamRecorder:
     """Captures webcam video in 10-minute MP4 segments."""
 
@@ -101,7 +96,7 @@ class WebcamRecorder:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.WEBCAM_HEIGHT)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            day_dir = _dated_subdir(config.WEBCAM_DIR)
+            day_dir = dated_subdir(config.WEBCAM_DIR)
             filename = os.path.join(day_dir, f"webcam_{timestamp}.mp4")
             writer, used_codec = self._open_writer(filename)
             if writer is None:
@@ -278,7 +273,7 @@ class WebcamPhotoCapture:
                 logger.warning("WebcamPhotoCapture: frame read failed")
                 return
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            day_dir = _dated_subdir(config.WEBCAM_PHOTOS_DIR)
+            day_dir = dated_subdir(config.WEBCAM_PHOTOS_DIR)
             filename = os.path.join(day_dir, f"webcam_photo_{timestamp}.jpg")
             cv2.imwrite(filename, frame)
             self._last_capture = time.time()

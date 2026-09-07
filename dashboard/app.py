@@ -88,6 +88,30 @@ def _is_safe(target: str, allowed_dirs: list) -> bool:
     return False
 
 
+def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
+    """Validate *abs_path* is inside an allowed directory, then serve it.
+
+    The directory passed to ``send_from_directory`` is taken from the
+    *allowed_dirs* list (a hardcoded value), not from the user-provided path,
+    so the taint from user input does not reach the filesystem call.
+    """
+    if not _is_safe(abs_path, allowed_dirs):
+        abort(403)
+    if not os.path.isfile(abs_path):
+        abort(404)
+    filename = os.path.basename(abs_path)
+    # Identify which allowed directory contains this file so we pass a
+    # server-controlled directory to send_from_directory, not user input.
+    for allowed_dir in allowed_dirs:
+        try:
+            if os.path.commonpath([abs_path, allowed_dir]) == allowed_dir:
+                return send_from_directory(allowed_dir, os.path.relpath(abs_path, allowed_dir), as_attachment=as_attachment)
+        except ValueError:
+            pass
+    # Unreachable after _is_safe check above, but keeps the function well-formed.
+    abort(403)
+
+
 @app.route("/")
 @login_required
 def index():
@@ -134,13 +158,7 @@ def view_image():
         os.path.realpath(os.path.abspath(config.SCREENSHOTS_DIR)),
         os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
     ]
-    if not _is_safe(abs_path, allowed):
-        abort(403)
-    if not os.path.isfile(abs_path):
-        abort(404)
-    directory = os.path.dirname(abs_path)
-    filename = os.path.basename(abs_path)
-    return send_from_directory(directory, filename)
+    return _safe_send(abs_path, allowed)
 
 
 @app.route("/keyboard")
@@ -173,13 +191,7 @@ def download():
         os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
         os.path.realpath(os.path.abspath(config.LOGS_DIR)),
     ]
-    if not _is_safe(abs_path, allowed):
-        abort(403)
-    if not os.path.isfile(abs_path):
-        abort(404)
-    directory = os.path.dirname(abs_path)
-    filename = os.path.basename(abs_path)
-    return send_from_directory(directory, filename, as_attachment=True)
+    return _safe_send(abs_path, allowed, as_attachment=True)
 
 
 # ------------------------------------------------------------------

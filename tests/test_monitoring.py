@@ -172,8 +172,8 @@ class TestStorageManager(unittest.TestCase):
         store.ensure_directories()
         old_file = Path(config.RECORDINGS_DIR) / "old.mp4"
         old_file.write_bytes(b"x")
-        # Set mtime to 31 days ago
-        old_time = time.time() - (config.MAX_RECORDING_AGE_DAYS + 1) * 86400
+        # Set mtime to DELETE_DATA + 1 days ago
+        old_time = time.time() - (config.DELETE_DATA + 1) * 86400
         os.utime(old_file, (old_time, old_time))
 
         mgr = store.StorageManager()

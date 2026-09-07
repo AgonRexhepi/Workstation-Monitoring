@@ -19,12 +19,13 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import config
 import storage.manager as store
 
 
 def main():
     manager = store.StorageManager()
-    print(f"Running cleanup (retention: {__import__('config').DELETE_DATA} days) …")
+    print(f"Running cleanup (retention: {config.DELETE_DATA} days) …")
     manager.run_once()
     summary = store.storage_summary()
     print(

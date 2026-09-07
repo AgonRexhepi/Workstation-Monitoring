@@ -75,10 +75,8 @@ SEGMENT_DURATION_SECONDS = 1800  # 30-minute video segments
 # ------------------------------------------------------------------
 # Storage / retention
 # ------------------------------------------------------------------
-# Maximum age (in days) before recordings are automatically purged
-MAX_RECORDING_AGE_DAYS = 30
-# DELETE_DATA: alias used by the automatic cleanup script (days)
-DELETE_DATA = MAX_RECORDING_AGE_DAYS
+# DELETE_DATA: files older than this many days are automatically purged.
+DELETE_DATA = 30
 # Maximum total disk usage in MB before oldest files are removed
 MAX_STORAGE_MB = 10_240           # 10 GB
 
