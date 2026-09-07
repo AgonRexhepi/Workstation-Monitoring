@@ -21,6 +21,7 @@ from pynput import keyboard
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
+from monitoring.utils import dated_subdir
 
 logger = logging.getLogger(__name__)
 
@@ -287,14 +288,7 @@ class KeyboardMonitor:
                 return
             entries, self._buffer = self._buffer, []
         # Daily log file under LOGS_DIR/YYYY/MM/DD/keyboard.log
-        now = datetime.now()
-        day_dir = os.path.join(
-            config.LOGS_DIR,
-            now.strftime("%Y"),
-            now.strftime("%m"),
-            now.strftime("%d"),
-        )
-        os.makedirs(day_dir, exist_ok=True)
+        day_dir = dated_subdir(config.LOGS_DIR)
         log_file = os.path.join(day_dir, "keyboard.log")
         try:
             with open(log_file, "a", encoding="utf-8") as fh:

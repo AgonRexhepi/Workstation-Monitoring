@@ -97,15 +97,14 @@ def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
     """
     if not _is_safe(abs_path, allowed_dirs):
         abort(403)
-    if not os.path.isfile(abs_path):
-        abort(404)
-    filename = os.path.basename(abs_path)
     # Identify which allowed directory contains this file so we pass a
     # server-controlled directory to send_from_directory, not user input.
     for allowed_dir in allowed_dirs:
         try:
             if os.path.commonpath([abs_path, allowed_dir]) == allowed_dir:
-                return send_from_directory(allowed_dir, os.path.relpath(abs_path, allowed_dir), as_attachment=as_attachment)
+                relpath = os.path.relpath(abs_path, allowed_dir)
+                # send_from_directory raises 404 if the file does not exist.
+                return send_from_directory(allowed_dir, relpath, as_attachment=as_attachment)
         except ValueError:
             pass
     # Unreachable after _is_safe check above, but keeps the function well-formed.
