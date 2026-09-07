@@ -133,9 +133,6 @@
         </td>
         <!-- Thumbnail -->
         <td>
-
-          <a href="{{ url_for('view_image', path=item.path) }}" target="_blank">
-
             <img src="{{ url_for('view_image', path=item.path) }}" alt="{{ item.name }}" loading="lazy"
               class="img-thumbnail" style="
                                 width: 180px;
@@ -143,8 +140,6 @@
                                 object-fit: contain;
                                 background: #000;
                             ">
-
-          </a>
         </td>
 
 

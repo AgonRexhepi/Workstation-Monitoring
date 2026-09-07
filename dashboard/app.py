@@ -22,6 +22,7 @@ from flask import (
     send_from_directory,
     abort,
     flash,
+    send_file,
 )
 
 import sys
@@ -95,22 +96,30 @@ def _is_safe(target: str, allowed_dirs: list) -> bool:
     return False
 
 
-def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
-    """Validate *abs_path* is inside an allowed directory, then serve it.
 
-    The directory passed to ``send_from_directory`` is taken from the
-    *allowed_dirs* list (a hardcoded value), not from the user-provided path,
-    so the taint from user input does not reach the filesystem call.
-    """
-    target_path = Path(abs_path)
-    for allowed_dir in allowed_dirs:
+
+def _safe_send(path: str, allowed_dirs: list[str]):
+    """Validate *abs_path* is inside an allowed directory, then serve it.
+    
+        The directory passed to ``send_from_directory`` is taken from the
+        *allowed_dirs* list (a hardcoded value), not from the user-provided path,
+        so the taint from user input does not reach the filesystem call.
+        """
+    target = Path(path).resolve()
+
+    for directory in allowed_dirs:
+        allowed = Path(directory).resolve()
+
         try:
-            if target_path.is_relative_to(allowed_dir):
-                relpath = os.path.relpath(abs_path, allowed_dir)
-                # send_from_directory raises 404 if the file does not exist.
-                return send_from_directory(allowed_dir, relpath, as_attachment=as_attachment)
-        except (TypeError, ValueError):
-            pass
+            target.relative_to(allowed)
+        except ValueError:
+            continue
+
+        if not target.is_file():
+            abort(404)
+
+        return send_file(target)
+
     abort(403)
 
 
