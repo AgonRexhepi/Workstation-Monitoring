@@ -164,8 +164,8 @@ def view_image():
 @app.route("/keyboard")
 @login_required
 def keyboard_log():
-    lines = store.get_keyboard_log_lines()
-    return render_template("keyboard.html", lines=lines)
+    days = store.get_keyboard_log_by_day()
+    return render_template("keyboard.html", days=days)
 
 
 @app.route("/system")

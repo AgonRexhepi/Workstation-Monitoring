@@ -2,9 +2,28 @@
 {% block title %}Keyboard Log – Workstation Monitor{% endblock %}
 {% block content %}
 <h2>Keyboard Activity Log</h2>
-<p class="text-muted small">Showing last 500 entries.</p>
-{% if lines %}
-<pre class="bg-dark text-light p-3 rounded" style="max-height:600px;overflow-y:auto;font-size:0.8rem;">{% for line in lines %}{{ line }}{% endfor %}</pre>
+{% if days %}
+  {% for day in days %}
+  <h5 class="mt-4">{{ day.date }}</h5>
+  <div class="table-responsive">
+    <table class="table table-sm table-striped table-bordered">
+      <thead class="table-dark">
+        <tr>
+          <th style="width:130px">Time</th>
+          <th>Key</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in day.entries %}
+        <tr>
+          <td class="text-monospace small">{{ entry.time }}</td>
+          <td class="text-monospace small">{{ entry.key }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
 {% else %}
 <p class="text-muted">No keyboard log data found.</p>
 {% endif %}
