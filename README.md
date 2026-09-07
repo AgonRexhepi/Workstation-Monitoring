@@ -195,3 +195,39 @@ python install_service.py
 ----
 sc.exe start WorkstationMonitorSvc
 sc.exe query WorkstationMonitorSvc
+
+
+
+---
+1. Hiqe service-in e vjetër
+
+Hape PowerShell Run as Administrator dhe bëj:
+
+python service.py stop
+
+Nëse thotë që service nuk është running, injoroje.
+
+Pastaj:
+
+python service.py remove
+
+Kontrollo:
+
+sc.exe query WorkstationMonitorSvc
+
+Duhet të dalë:
+
+FAILED 1060
+2. Instaloje përsëri
+python service.py install
+
+Duhet:
+
+Installing service WorkstationMonitorSvc
+Service installed
+3. Tani startoje
+python service.py start
+
+Pastaj menjëherë:
+
+sc.exe query WorkstationMonitorSvc

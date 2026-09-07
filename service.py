@@ -120,21 +120,52 @@ try:
         def __init__(self, args):
             win32serviceutil.ServiceFramework.__init__(self, args)
             self._stop_event = win32event.CreateEvent(None, 0, 0, None)
-            self._orchestrator = MonitoringOrchestrator()
+            self._orchestrator = None
 
         def SvcStop(self):
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+            logger.info("Windows Service stop requested.")
+
+            self.ReportServiceStatus(
+                win32service.SERVICE_STOP_PENDING
+            )
+
             win32event.SetEvent(self._stop_event)
-            self._orchestrator.stop()
+
+            if self._orchestrator:
+                try:
+                    self._orchestrator.stop()
+                except Exception:
+                    logger.exception("Error while stopping service")
+
+            logger.info("Windows Service stopped.")
 
         def SvcDoRun(self):
-            servicemanager.LogMsg(
-                servicemanager.EVENTLOG_INFORMATION_TYPE,
-                servicemanager.PYS_SERVICE_STARTED,
-                (self._svc_name_, ""),
-            )
-            self._orchestrator.start()
-            win32event.WaitForSingleObject(self._stop_event, win32event.INFINITE)
+            try:
+                servicemanager.LogInfoMsg(
+                    f"{self._svc_name_} is starting..."
+                )
+
+                logger.info("Windows Service is starting...")
+
+                self._orchestrator = MonitoringOrchestrator()
+                self._orchestrator.start()
+
+                logger.info("Windows Service started successfully.")
+
+                win32event.WaitForSingleObject(
+                    self._stop_event,
+                    win32event.INFINITE
+                )
+
+            except Exception:
+                logger.exception("FATAL ERROR while starting Windows Service")
+
+                servicemanager.LogErrorMsg(
+                    f"{self._svc_name_} failed to start. "
+                    f"Check monitor_service.log"
+                )
+
+                raise
 
     _WINDOWS_SERVICE_AVAILABLE = True
 
@@ -151,12 +182,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1 and _WINDOWS_SERVICE_AVAILABLE:
-        # Called by the Service Control Manager
-        servicemanager.Initialize()
-        servicemanager.PrepareToHostSingle(WorkstationMonitorService)
-        servicemanager.StartServiceCtrlDispatcher()
-    elif len(sys.argv) > 1 and sys.argv[1] == "debug":
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "debug":
         # Console / development mode
         import signal
 
@@ -164,13 +190,30 @@ if __name__ == "__main__":
         orchestrator.start()
 
         stop_evt = threading.Event()
-        signal.signal(signal.SIGINT, lambda *_: stop_evt.set())
-        signal.signal(signal.SIGTERM, lambda *_: stop_evt.set())
+
+        signal.signal(
+            signal.SIGINT,
+            lambda *_: stop_evt.set()
+        )
+
+        signal.signal(
+            signal.SIGTERM,
+            lambda *_: stop_evt.set()
+        )
+
         logger.info("Running in debug mode. Press Ctrl+C to stop.")
-        stop_evt.wait()
-        orchestrator.stop()
+
+        try:
+            stop_evt.wait()
+        finally:
+            orchestrator.stop()
+
     elif _WINDOWS_SERVICE_AVAILABLE:
-        win32serviceutil.HandleCommandLine(WorkstationMonitorService)
+        # install / start / stop / remove and SCM dispatch
+        win32serviceutil.HandleCommandLine(
+            WorkstationMonitorService
+        )
+
     else:
         print(
             "pywin32 is not installed. Install it with:\n"
