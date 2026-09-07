@@ -129,6 +129,10 @@ class ScreenRecorder:
         self._agent_lock = threading.Lock()
         self._agent_watchdog_thread: threading.Thread | None = None
         self._using_agent = False
+        # Activity-triggered screenshot state
+        self._screenshot_activity_event = threading.Event()
+        self._screenshot_last_capture: float = 0.0
+        self._screenshot_listeners: list = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -136,6 +140,8 @@ class ScreenRecorder:
 
     def start(self, record: bool = True, screenshot: bool = True):
         self._stop_event.clear()
+        self._screenshot_activity_event.clear()
+        self._screenshot_last_capture = 0.0
         if _is_session_0():
             logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
             spawned = _spawn_agent_in_user_session()
@@ -161,22 +167,33 @@ class ScreenRecorder:
         if self._record_thread and self._record_thread.is_alive():
             logger.warning("ScreenRecorder already running")
             return
+        if self._screenshot_thread and self._screenshot_thread.is_alive():
+            logger.warning("ScreenRecorder screenshot already running")
+            return
         if record:
             self._record_thread = threading.Thread(
                 target=self._record_loop, daemon=True, name="screen-record"
             )
             self._record_thread.start()
         if screenshot:
+            if config.SCREENSHOT_ON_ACTIVITY:
+                self._start_screenshot_listeners()
+                target = self._screenshot_activity_loop
+            else:
+                target = self._screenshot_timer_loop
             self._screenshot_thread = threading.Thread(
-                target=self._screenshot_loop, daemon=True, name="screen-screenshot"
+                target=target, daemon=True, name="screen-screenshot"
             )
             self._screenshot_thread.start()
         logger.info(
-            "ScreenRecorder started (record=%s, screenshot=%s)", record, screenshot
+            "ScreenRecorder started (record=%s, screenshot=%s, activity_mode=%s)",
+            record, screenshot, config.SCREENSHOT_ON_ACTIVITY,
         )
 
     def stop(self):
         self._stop_event.set()
+        self._screenshot_activity_event.set()  # unblock any waiting screenshot thread
+        self._stop_screenshot_listeners()
         if self._using_agent:
             with self._agent_lock:
                 handle = self._agent_handle
@@ -284,6 +301,109 @@ class ScreenRecorder:
     # Internal loops
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Activity-listener helpers (screenshot)
+    # ------------------------------------------------------------------
+
+    def _on_screenshot_activity(self, *_args, **_kwargs):
+        self._screenshot_activity_event.set()
+
+    def _start_screenshot_listeners(self):
+        try:
+            from pynput import keyboard as kb, mouse as ms
+            kb_listener = kb.Listener(on_press=self._on_screenshot_activity, daemon=True)
+            ms_listener = ms.Listener(
+                on_move=self._on_screenshot_activity,
+                on_click=self._on_screenshot_activity,
+                on_scroll=self._on_screenshot_activity,
+                daemon=True,
+            )
+            kb_listener.start()
+            ms_listener.start()
+            self._screenshot_listeners = [kb_listener, ms_listener]
+        except Exception as exc:
+            logger.warning(
+                "ScreenRecorder: could not start activity listeners (%s); "
+                "falling back to timer mode for screenshots.", exc,
+            )
+            self._screenshot_listeners = []
+
+    def _stop_screenshot_listeners(self):
+        for listener in self._screenshot_listeners:
+            try:
+                listener.stop()
+            except Exception:
+                pass
+        self._screenshot_listeners = []
+
+    # ------------------------------------------------------------------
+    # Screenshot loops
+    # ------------------------------------------------------------------
+
+    def _screenshot_activity_loop(self):
+        """Take a screenshot on any keyboard/mouse activity, with a minimum interval."""
+        os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)
+        counter = 0
+        with mss.mss() as sct:
+            if len(sct.monitors) < 2:
+                logger.error("No primary monitor available for screenshots")
+                return
+            monitor = sct.monitors[1]
+            while not self._stop_event.is_set():
+                self._screenshot_activity_event.wait()
+                if self._stop_event.is_set():
+                    break
+                self._screenshot_activity_event.clear()
+
+                now = time.time()
+                since_last = now - self._screenshot_last_capture
+                if since_last < config.SCREENSHOT_INTERVAL:
+                    remaining = config.SCREENSHOT_INTERVAL - since_last
+                    self._stop_event.wait(remaining)
+                    if self._stop_event.is_set():
+                        break
+                    self._screenshot_activity_event.clear()
+
+                if self._stop_event.is_set():
+                    break
+
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    day_dir = dated_subdir(config.SCREENSHOTS_DIR)
+                    filename = os.path.join(
+                        day_dir, f"screenshot_{timestamp}_{counter:04d}.png"
+                    )
+                    img = sct.grab(monitor)
+                    mss.tools.to_png(img.rgb, img.size, output=filename)
+                    self._screenshot_last_capture = time.time()
+                    logger.info("Screenshot saved: %s", filename)
+                    counter += 1
+                except Exception:
+                    logger.exception("Error taking screenshot")
+
+    def _screenshot_timer_loop(self):
+        """Take a screenshot every SCREENSHOT_INTERVAL seconds."""
+        os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)
+        counter = 0
+        with mss.mss() as sct:
+            if len(sct.monitors) < 2:
+                logger.error("No primary monitor available for screenshots")
+                return
+            monitor = sct.monitors[1]
+            while not self._stop_event.wait(config.SCREENSHOT_INTERVAL):
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    day_dir = dated_subdir(config.SCREENSHOTS_DIR)
+                    filename = os.path.join(
+                        day_dir, f"screenshot_{timestamp}_{counter:04d}.png"
+                    )
+                    img = sct.grab(monitor)
+                    mss.tools.to_png(img.rgb, img.size, output=filename)
+                    logger.info("Screenshot saved: %s", filename)
+                    counter += 1
+                except Exception:
+                    logger.exception("Error taking screenshot")
+
     # Codecs tried in order until one opens successfully.
     _CODEC_FALLBACKS = ["H264", "XVID", "mp4v"]
 
@@ -378,24 +498,5 @@ class ScreenRecorder:
                 if segment_failed:
                     self._stop_event.wait(10)
 
-    def _screenshot_loop(self):
-        os.makedirs(config.SCREENSHOTS_DIR, exist_ok=True)
-        with mss.mss() as sct:
-            if len(sct.monitors) < 2:
-                logger.error("No primary monitor available for screenshots")
-                return
-            monitor = sct.monitors[1]
-            counter = 0
-            while not self._stop_event.wait(config.SCREENSHOT_INTERVAL):
-                try:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    day_dir = dated_subdir(config.SCREENSHOTS_DIR)
-                    filename = os.path.join(
-                        day_dir, f"screenshot_{timestamp}_{counter:04d}.png"
-                    )
-                    img = sct.grab(monitor)
-                    mss.tools.to_png(img.rgb, img.size, output=filename)
-                    logger.info("Screenshot saved: %s", filename)
-                    counter += 1
-                except Exception:
-                    logger.exception("Error taking screenshot")
+
+

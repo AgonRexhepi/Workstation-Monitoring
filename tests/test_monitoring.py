@@ -25,6 +25,9 @@ sys.modules.setdefault("mss.tools", MagicMock())
 cv2_mock = MagicMock()
 sys.modules.setdefault("cv2", cv2_mock)
 
+# numpy – required by cv2 and screen.py
+sys.modules.setdefault("numpy", MagicMock())
+
 # pynput (keyboard listener) – needs a display / uinput on Linux
 pynput_mock = MagicMock()
 sys.modules.setdefault("pynput", pynput_mock)
@@ -67,6 +70,7 @@ class TestConfig(unittest.TestCase):
             "WEBCAM_PHOTO_ON_ACTIVITY",
             "SCREEN_RECORD",
             "SCREEN_SHOT",
+            "SCREENSHOT_ON_ACTIVITY",
             "KEY_LOGGER",
             # Webcam photo settings
             "WEBCAM_PHOTOS_DIR",
@@ -330,6 +334,53 @@ class TestWebcamPhotoCapture(unittest.TestCase):
         cap.start()  # second call should be a no-op
         self.assertEqual(id(cap._thread), thread_id)
         cap.stop()
+
+
+class TestScreenRecorderScreenshot(unittest.TestCase):
+    """Tests for the activity-triggered screenshot mode in ScreenRecorder."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._orig_screenshots_dir = config.SCREENSHOTS_DIR
+        self._orig_interval = config.SCREENSHOT_INTERVAL
+        self._orig_on_activity = config.SCREENSHOT_ON_ACTIVITY
+        config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
+        config.SCREENSHOT_INTERVAL = 60
+        config.SCREENSHOT_ON_ACTIVITY = True
+
+    def tearDown(self):
+        config.SCREENSHOTS_DIR = self._orig_screenshots_dir
+        config.SCREENSHOT_INTERVAL = self._orig_interval
+        config.SCREENSHOT_ON_ACTIVITY = self._orig_on_activity
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_start_stop_activity_mode(self):
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        self.assertTrue(rec._screenshot_thread.is_alive())
+        rec.stop()
+        rec._screenshot_thread.join(timeout=5)
+        self.assertFalse(rec._screenshot_thread.is_alive())
+
+    def test_start_stop_timer_mode(self):
+        config.SCREENSHOT_ON_ACTIVITY = False
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        self.assertTrue(rec._screenshot_thread.is_alive())
+        rec.stop()
+        rec._screenshot_thread.join(timeout=5)
+        self.assertFalse(rec._screenshot_thread.is_alive())
+
+    def test_double_start_is_idempotent(self):
+        from monitoring.screen import ScreenRecorder
+        rec = ScreenRecorder()
+        rec.start(record=False, screenshot=True)
+        thread_id = id(rec._screenshot_thread)
+        rec.start(record=False, screenshot=True)  # second call should be a no-op
+        self.assertEqual(id(rec._screenshot_thread), thread_id)
+        rec.stop()
 
 
 if __name__ == "__main__":
