@@ -139,6 +139,9 @@ def list_screenshots() -> list[dict]:
 def list_webcam_photos() -> list[dict]:
     return _list_files(config.WEBCAM_PHOTOS_DIR, "*.jpg")
 
+def list_logs() -> list[dict]:
+    return _list_files(config.LOGS_DIR, "*.log")
+
 
 def get_keyboard_log_lines(max_lines: int = 500) -> list[str]:
     """Return the last *max_lines* lines across all daily keyboard log files."""
@@ -234,4 +237,5 @@ def storage_summary() -> dict:
         "webcam": len(list_webcam_recordings()),
         "screenshots": len(list_screenshots()),
         "webcam_photos": len(list_webcam_photos()),
+        "logs": len(list_logs()),
     }
