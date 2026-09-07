@@ -6,6 +6,7 @@ Runs on loopback (127.0.0.1) so it is never exposed to the network by default.
 import os
 import platform
 import logging
+import math
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -29,6 +30,7 @@ import config
 import storage.manager as store
 
 logger = logging.getLogger(__name__)
+ITEMS_PER_PAGE = 10
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = config.DASHBOARD_SECRET_KEY
@@ -112,6 +114,92 @@ def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
     abort(403)
 
 
+def _parse_datetime_filter(value: str, *, end_of_day: bool = False) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if end_of_day and "T" not in value:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return parsed.timestamp()
+
+
+def _filter_media_items(items: list[dict], search: str, date_from: str, date_to: str) -> list[dict]:
+    search_term = search.strip().lower()
+    date_from_ts = None
+    date_to_ts = None
+
+    try:
+        date_from_ts = _parse_datetime_filter(date_from)
+        date_to_ts = _parse_datetime_filter(date_to, end_of_day=True)
+    except ValueError:
+        flash("Invalid date/time format.", "danger")
+
+    filtered_items = []
+    for item in items:
+        if search_term:
+            name = str(item.get("name", "")).lower()
+            modified = str(item.get("modified", "")).lower()
+            if search_term not in name and search_term not in modified:
+                continue
+
+        modified_timestamp = item.get("modified_timestamp", 0)
+        if date_from_ts is not None and modified_timestamp < date_from_ts:
+            continue
+        if date_to_ts is not None and modified_timestamp > date_to_ts:
+            continue
+
+        filtered_items.append(item)
+
+    return filtered_items
+
+
+def _get_page_number() -> int:
+    try:
+        return max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _paginate_items(items: list[dict], page: int, per_page: int = ITEMS_PER_PAGE) -> tuple[list[dict], dict]:
+    total_items = len(items)
+    total_pages = max(math.ceil(total_items / per_page), 1)
+    page = min(page, total_pages)
+    start_index = (page - 1) * per_page
+    paginated_items = items[start_index:start_index + per_page]
+    return paginated_items, {
+        "page": page,
+        "per_page": per_page,
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "start_index": start_index,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
+def _build_pagination_links(endpoint: str, pagination: dict, search: str, date_from: str, date_to: str) -> dict:
+    query_args = {
+        "search": search,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+    total_pages = pagination["total_pages"]
+    page = pagination["page"]
+    return {
+        "prev_url": url_for(endpoint, page=page - 1, **query_args) if pagination["has_prev"] else None,
+        "next_url": url_for(endpoint, page=page + 1, **query_args) if pagination["has_next"] else None,
+        "pages": [
+            {
+                "number": page_number,
+                "url": url_for(endpoint, page=page_number, **query_args),
+                "active": page_number == page,
+            }
+            for page_number in range(1, total_pages + 1)
+        ],
+    }
+
+
 @app.route("/")
 @login_required
 def index():
@@ -138,54 +226,22 @@ def webcam():
 @login_required
 def webcam_photos():
     items = store.list_webcam_photos()
-
-    search = request.args.get("search", "").strip().lower()
+    search = request.args.get("search", "").strip()
     date_from_str = request.args.get("date_from", "").strip()
     date_to_str = request.args.get("date_to", "").strip()
-
-    date_from = None
-    date_to = None
-
-    try:
-        if date_from_str:
-            date_from = datetime.fromisoformat(date_from_str).timestamp()
-
-        if date_to_str:
-            date_to = datetime.fromisoformat(date_to_str).timestamp()
-
-    except ValueError:
-        flash("Invalid date/time format.", "danger")
-
-    filtered_items = []
-
-    for item in items:
-
-        # Search
-        if search:
-            name = str(item.get("name", "")).lower()
-            modified = str(item.get("modified", "")).lower()
-
-            if search not in name and search not in modified:
-                continue
-
-        # Date Time From
-        if date_from is not None:
-            if item.get("modified_timestamp", 0) < date_from:
-                continue
-
-        # Date Time To
-        if date_to is not None:
-            if item.get("modified_timestamp", 0) > date_to:
-                continue
-
-        filtered_items.append(item)
+    filtered_items = _filter_media_items(items, search, date_from_str, date_to_str)
+    paginated_items, pagination = _paginate_items(filtered_items, _get_page_number())
 
     return render_template(
         "webcam_photos.html",
-        items=filtered_items,
+        items=paginated_items,
+        pagination=pagination,
+        pagination_links=_build_pagination_links(
+            "webcam_photos", pagination, search, date_from_str, date_to_str
+        ),
         search=search,
         date_from=date_from_str,
-        date_to=date_to_str
+        date_to=date_to_str,
     )
 
 
@@ -193,7 +249,22 @@ def webcam_photos():
 @login_required
 def screenshots():
     items = store.list_screenshots()
-    return render_template("screenshots.html", items=items)
+    search = request.args.get("search", "").strip()
+    date_from_str = request.args.get("date_from", "").strip()
+    date_to_str = request.args.get("date_to", "").strip()
+    filtered_items = _filter_media_items(items, search, date_from_str, date_to_str)
+    paginated_items, pagination = _paginate_items(filtered_items, _get_page_number())
+    return render_template(
+        "screenshots.html",
+        items=paginated_items,
+        pagination=pagination,
+        pagination_links=_build_pagination_links(
+            "screenshots", pagination, search, date_from_str, date_to_str
+        ),
+        search=search,
+        date_from=date_from_str,
+        date_to=date_to_str,
+    )
 
 
 @app.route("/view_image")

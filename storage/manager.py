@@ -7,7 +7,7 @@ import os
 import time
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import sys
@@ -40,19 +40,27 @@ def ensure_directories():
 class StorageManager:
     """Periodically enforces the storage retention policy."""
 
-    def __init__(self, check_interval: int = 3600):
-        self._interval = check_interval
+    def __init__(self, cleanup_hour: int = 8):
+        self._cleanup_hour = cleanup_hour
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_cleanup_date = None
 
     def start(self):
         ensure_directories()
         self._stop_event.clear()
+        now = datetime.now()
+        if self._should_run_cleanup_now(now):
+            self.run_once()
+            self._last_cleanup_date = now.date()
         self._thread = threading.Thread(
             target=self._cleanup_loop, daemon=True, name="storage-cleanup"
         )
         self._thread.start()
-        logger.info("StorageManager started")
+        logger.info(
+            "StorageManager started (daily cleanup at %02d:00)",
+            self._cleanup_hour,
+        )
 
     def stop(self):
         self._stop_event.set()
@@ -61,10 +69,13 @@ class StorageManager:
         logger.info("StorageManager stopped")
 
     def _cleanup_loop(self):
-        while not self._stop_event.wait(self._interval):
+        while not self._stop_event.is_set():
+            wait_seconds = self._seconds_until_next_cleanup()
+            if self._stop_event.wait(wait_seconds):
+                break
             try:
-                self._enforce_age_policy()
-                self._enforce_size_policy()
+                self.run_once()
+                self._last_cleanup_date = datetime.now().date()
             except Exception:
                 logger.exception("Error during storage cleanup")
 
@@ -72,6 +83,30 @@ class StorageManager:
         """Run a single cleanup pass (age + size) synchronously."""
         self._enforce_age_policy()
         self._enforce_size_policy()
+
+    def _should_run_cleanup_now(self, now: datetime | None = None) -> bool:
+        now = now or datetime.now()
+        return (
+            now.hour >= self._cleanup_hour
+            and self._last_cleanup_date != now.date()
+        )
+
+    def _next_cleanup_time(self, now: datetime | None = None) -> datetime:
+        now = now or datetime.now()
+        next_run = now.replace(
+            hour=self._cleanup_hour,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        if now >= next_run:
+            next_run += timedelta(days=1)
+        return next_run
+
+    def _seconds_until_next_cleanup(self, now: datetime | None = None) -> float:
+        now = now or datetime.now()
+        wait_seconds = (self._next_cleanup_time(now) - now).total_seconds()
+        return max(wait_seconds, 1.0)
 
     def _enforce_age_policy(self):
         # Use DELETE_DATA (days) as the retention period
@@ -114,6 +149,7 @@ def _file_info(path: Path) -> dict:
         "name": resolved.name,
         "path": str(resolved),
         "size_bytes": stat.st_size,
+        "modified_timestamp": stat.st_mtime,
         "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
             "%Y-%m-%d %H:%M:%S"
         ),
@@ -225,6 +261,16 @@ def _list_files(
 
 
 def storage_summary() -> dict:
+    today = datetime.now().strftime("%Y-%m-%d")
+    screenshots = list_screenshots()
+    webcam_photos = list_webcam_photos()
+    keyboard_days = get_keyboard_log_by_day()
+    keylogger_days = len(keyboard_days)
+    keylogger_days_today = sum(
+        1
+        for day in keyboard_days
+        if day["date"] == today
+    )
     total = 0
     for directory in _all_dirs():
         for path in Path(directory).rglob("*"):
@@ -235,7 +281,15 @@ def storage_summary() -> dict:
         "max_mb": config.MAX_STORAGE_MB,
         "recordings": len(list_screen_recordings()),
         "webcam": len(list_webcam_recordings()),
-        "screenshots": len(list_screenshots()),
-        "webcam_photos": len(list_webcam_photos()),
+        "screenshots": len(screenshots),
+        "screenshots_today": sum(
+            1 for item in screenshots if item["modified"].startswith(today)
+        ),
+        "webcam_photos": len(webcam_photos),
+        "webcam_photos_today": sum(
+            1 for item in webcam_photos if item["modified"].startswith(today)
+        ),
+        "keylogger_days": keylogger_days,
+        "keylogger_days_today": keylogger_days_today,
         "logs": len(list_logs()),
     }
