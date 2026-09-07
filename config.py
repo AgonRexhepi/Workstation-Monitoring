@@ -101,4 +101,6 @@ SCREEN_SHOT   = 1    # periodic screenshots
 SCREENSHOT_ON_ACTIVITY = True
 KEY_LOGGER    = 1    # keyboard activity logging
 
+# Pagination settings for the dashboard
+ITEMS_PER_PAGE = 10
 
