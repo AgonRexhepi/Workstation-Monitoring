@@ -244,6 +244,9 @@ class WebcamPhotoCapture:
                 self._stop_event.wait(remaining)
                 if self._stop_event.is_set():
                     break
+                # Discard any activity that fired during the cooldown so it
+                # does not immediately trigger another capture.
+                self._activity_event.clear()
 
             self._capture_photo()
 

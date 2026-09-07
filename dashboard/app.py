@@ -77,13 +77,18 @@ def logout():
 # ------------------------------------------------------------------
 
 def _is_safe(target: str, allowed_dirs: list) -> bool:
-    """Return True if *target* is strictly inside one of the *allowed_dirs*."""
+    """Return True if *target* is strictly inside one of the *allowed_dirs*.
+
+    Uses ``Path.is_relative_to`` (Python 3.9+) for strict containment so that
+    a sibling path such as ``/data/webcam_photos`` cannot be confused with
+    ``/data/webcam`` the way a plain ``commonpath`` prefix check can.
+    """
+    target_path = Path(target)
     for allowed_dir in allowed_dirs:
         try:
-            if os.path.commonpath([target, allowed_dir]) == allowed_dir:
+            if target_path.is_relative_to(allowed_dir):
                 return True
-        except ValueError:
-            # commonpath raises ValueError on mixed drive letters (Windows)
+        except (TypeError, ValueError):
             pass
     return False
 
@@ -95,19 +100,15 @@ def _safe_send(abs_path: str, allowed_dirs: list, as_attachment: bool = False):
     *allowed_dirs* list (a hardcoded value), not from the user-provided path,
     so the taint from user input does not reach the filesystem call.
     """
-    if not _is_safe(abs_path, allowed_dirs):
-        abort(403)
-    # Identify which allowed directory contains this file so we pass a
-    # server-controlled directory to send_from_directory, not user input.
+    target_path = Path(abs_path)
     for allowed_dir in allowed_dirs:
         try:
-            if os.path.commonpath([abs_path, allowed_dir]) == allowed_dir:
+            if target_path.is_relative_to(allowed_dir):
                 relpath = os.path.relpath(abs_path, allowed_dir)
                 # send_from_directory raises 404 if the file does not exist.
                 return send_from_directory(allowed_dir, relpath, as_attachment=as_attachment)
-        except ValueError:
+        except (TypeError, ValueError):
             pass
-    # Unreachable after _is_safe check above, but keeps the function well-formed.
     abort(403)
 
 
