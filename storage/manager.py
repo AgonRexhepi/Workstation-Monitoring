@@ -165,6 +165,10 @@ def _list_files(
     base = Path(directory)
     if not base.exists():
         return results
+    # rglob recurses into YYYY/MM/DD subdirectories created by dated_subdir.
+    # For typical monitoring deployments (≤12 months, daily dirs) the tree
+    # depth is shallow (≤3 levels) and the file count manageable, so the
+    # added stat overhead is acceptable.
     for path in sorted(base.rglob(pattern), key=lambda p: p.stat().st_mtime, reverse=True):
         if exclude_suffixes and any(path.name.endswith(suf) for suf in exclude_suffixes):
             continue

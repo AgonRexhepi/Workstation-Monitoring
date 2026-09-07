@@ -248,6 +248,8 @@ class WebcamPhotoCapture:
                 # does not immediately trigger another capture.
                 self._activity_event.clear()
 
+            if self._stop_event.is_set():
+                break
             self._capture_photo()
 
     def _timer_loop(self):
