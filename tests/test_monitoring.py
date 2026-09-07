@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -27,6 +28,9 @@ sys.modules.setdefault("cv2", cv2_mock)
 
 # numpy – required by cv2 and screen.py
 sys.modules.setdefault("numpy", MagicMock())
+
+# psutil – may not be installed in CI
+sys.modules.setdefault("psutil", MagicMock())
 
 # pynput (keyboard listener) – needs a display / uinput on Linux
 pynput_mock = MagicMock()
@@ -207,6 +211,35 @@ class TestStorageManager(unittest.TestCase):
         for key in ("total_mb", "max_mb", "recordings", "webcam", "screenshots", "webcam_photos"):
             self.assertIn(key, summary)
 
+    def test_storage_summary_includes_daily_counts(self):
+        store.ensure_directories()
+        screenshot = Path(config.SCREENSHOTS_DIR) / "shot_today.png"
+        webcam_photo = Path(config.WEBCAM_PHOTOS_DIR) / "webcam_today.jpg"
+        screenshot.write_bytes(b"x")
+        webcam_photo.write_bytes(b"x")
+
+        old_file = Path(config.SCREENSHOTS_DIR) / "shot_old.png"
+        old_file.write_bytes(b"x")
+        old_time = time.time() - 2 * 86400
+        os.utime(old_file, (old_time, old_time))
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        Path(config.KEYBOARD_LOG_FILE).write_text(
+            f"{today}T10:00:00.000000 a\n"
+            f"{today}T11:00:00.000000 b\n"
+            f"{yesterday}T09:00:00.000000 c\n",
+            encoding="utf-8",
+        )
+
+        summary = store.storage_summary()
+        self.assertEqual(summary["screenshots"], 2)
+        self.assertEqual(summary["screenshots_today"], 1)
+        self.assertEqual(summary["webcam_photos"], 1)
+        self.assertEqual(summary["webcam_photos_today"], 1)
+        self.assertEqual(summary["keylogger_entries"], 3)
+        self.assertEqual(summary["keylogger_entries_today"], 2)
+
     def test_age_policy_removes_old_file(self):
         store.ensure_directories()
         old_file = Path(config.RECORDINGS_DIR) / "old.mp4"
@@ -242,6 +275,20 @@ class TestStorageManager(unittest.TestCase):
         self.assertFalse(big_file.exists())
 
         config.MAX_STORAGE_MB = orig_max
+
+    def test_cleanup_schedule_helpers(self):
+        mgr = store.StorageManager()
+        before_cleanup = datetime(2024, 1, 1, 7, 30, 0)
+        after_cleanup = datetime(2024, 1, 1, 8, 30, 0)
+
+        self.assertFalse(mgr._should_run_cleanup_now(before_cleanup))
+        self.assertEqual(mgr._next_cleanup_time(before_cleanup), datetime(2024, 1, 1, 8, 0, 0))
+        self.assertEqual(mgr._seconds_until_next_cleanup(before_cleanup), 1800.0)
+
+        self.assertTrue(mgr._should_run_cleanup_now(after_cleanup))
+        mgr._last_cleanup_date = after_cleanup.date()
+        self.assertFalse(mgr._should_run_cleanup_now(after_cleanup))
+        self.assertEqual(mgr._next_cleanup_time(after_cleanup), datetime(2024, 1, 2, 8, 0, 0))
 
 
 class TestDashboard(unittest.TestCase):
@@ -310,6 +357,52 @@ class TestDashboard(unittest.TestCase):
         self._login()
         resp = self._client.get("/screenshots")
         self.assertEqual(resp.status_code, 200)
+
+    def test_webcam_photos_support_filters_and_pagination(self):
+        self._login()
+        base_time = time.time()
+        for index in range(11):
+            path = Path(config.WEBCAM_PHOTOS_DIR) / f"match_{index:02d}.jpg"
+            path.write_bytes(b"x")
+            timestamp = base_time - (11 - index) * 60
+            os.utime(path, (timestamp, timestamp))
+        (Path(config.WEBCAM_PHOTOS_DIR) / "ignore.jpg").write_bytes(b"x")
+
+        resp = self._client.get("/webcam_photos?search=match&page=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Page 1 of 2", resp.data)
+        self.assertIn(b"match_10.jpg", resp.data)
+        self.assertNotIn(b"match_00.jpg", resp.data)
+        self.assertNotIn(b"ignore.jpg", resp.data)
+
+        resp = self._client.get("/webcam_photos?search=match&page=2")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"match_00.jpg", resp.data)
+
+    def test_screenshots_support_filters_and_pagination(self):
+        self._login()
+        base_time = time.time()
+        for index in range(11):
+            path = Path(config.SCREENSHOTS_DIR) / f"needle_{index:02d}.png"
+            path.write_bytes(b"x")
+            timestamp = base_time - (11 - index) * 60
+            os.utime(path, (timestamp, timestamp))
+        old_path = Path(config.SCREENSHOTS_DIR) / "needle_old.png"
+        old_path.write_bytes(b"x")
+        old_timestamp = base_time - 3 * 86400
+        os.utime(old_path, (old_timestamp, old_timestamp))
+
+        date_from = datetime.fromtimestamp(base_time - 3600).strftime("%Y-%m-%dT%H:%M")
+        resp = self._client.get(f"/screenshots?search=needle&date_from={date_from}&page=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Page 1 of 2", resp.data)
+        self.assertIn(b"needle_10.png", resp.data)
+        self.assertNotIn(b"needle_00.png", resp.data)
+        self.assertNotIn(b"needle_old.png", resp.data)
+
+        resp = self._client.get(f"/screenshots?search=needle&date_from={date_from}&page=2")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"needle_00.png", resp.data)
 
     def test_keyboard_page(self):
         self._login()

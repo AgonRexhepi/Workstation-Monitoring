@@ -146,7 +146,7 @@ C:\WorkstationMonitor\
 
 ## 8. Automatic Data Cleanup
 
-The built-in `StorageManager` runs every hour and automatically:
+The built-in `StorageManager` runs automatically every day at **08:00** and:
 
 1. **Deletes files older than `DELETE_DATA` days** (configured in `config.py`).  
 2. **Removes the oldest files** when total disk usage exceeds `MAX_STORAGE_MB`.
