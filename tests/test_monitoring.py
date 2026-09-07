@@ -166,6 +166,41 @@ class TestStorageManager(unittest.TestCase):
         lines = store.get_keyboard_log_lines(max_lines=500)
         self.assertLessEqual(len(lines), 500)
 
+    def test_keyboard_log_by_day_empty(self):
+        store.ensure_directories()
+        days = store.get_keyboard_log_by_day()
+        self.assertEqual(days, [])
+
+    def test_keyboard_log_by_day_groups_by_date(self):
+        store.ensure_directories()
+        log_path = Path(config.KEYBOARD_LOG_FILE)
+        log_path.write_text(
+            "2024-01-01T10:00:00.000000 a\n"
+            "2024-01-01T10:00:01.000000 b\n"
+            "2024-01-02T11:00:00.000000 c\n",
+            encoding="utf-8",
+        )
+        days = store.get_keyboard_log_by_day()
+        self.assertEqual(len(days), 2)
+        self.assertEqual(days[0]["date"], "2024-01-01")
+        self.assertEqual(len(days[0]["entries"]), 2)
+        self.assertEqual(days[0]["entries"][0]["key"], "a")
+        self.assertEqual(days[0]["entries"][0]["time"], "10:00:00")
+        self.assertEqual(days[1]["date"], "2024-01-02")
+        self.assertEqual(len(days[1]["entries"]), 1)
+
+    def test_keyboard_log_by_day_all_lines(self):
+        """All lines should be returned (no 500-row cap)."""
+        store.ensure_directories()
+        log_path = Path(config.KEYBOARD_LOG_FILE)
+        entries = "\n".join(
+            f"2024-01-01T10:00:{i:02d}.000000 x" for i in range(60)
+        ) + "\n"
+        log_path.write_text(entries, encoding="utf-8")
+        days = store.get_keyboard_log_by_day()
+        self.assertEqual(len(days), 1)
+        self.assertEqual(len(days[0]["entries"]), 60)
+
     def test_storage_summary_keys(self):
         store.ensure_directories()
         summary = store.storage_summary()

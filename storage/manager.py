@@ -108,10 +108,11 @@ class StorageManager:
 # ------------------------------------------------------------------
 
 def _file_info(path: Path) -> dict:
-    stat = path.stat()
+    resolved = path.resolve()
+    stat = resolved.stat()
     return {
-        "name": path.name,
-        "path": str(path),
+        "name": resolved.name,
+        "path": str(resolved),
         "size_bytes": stat.st_size,
         "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -154,6 +155,50 @@ def get_keyboard_log_lines(max_lines: int = 500) -> list[str]:
         except OSError:
             pass
     return lines[-max_lines:]
+
+
+def get_keyboard_log_by_day() -> list[dict]:
+    """Return all keyboard log entries grouped by day.
+
+    Each item in the returned list has:
+      * ``date``    – date string ``YYYY-MM-DD``
+      * ``entries`` – list of ``{"time": "HH:MM:SS", "key": str}`` dicts,
+                      sorted oldest-first within the day
+
+    Days are ordered oldest-first.  All daily log files are read in full –
+    there is no row-count limit.
+    """
+    base = Path(config.LOGS_DIR)
+    if not base.exists():
+        return []
+
+    # Group raw lines by calendar date
+    day_map: dict[str, list[dict]] = {}
+    for log_path in base.rglob("keyboard.log"):
+        try:
+            with log_path.open("r", encoding="utf-8") as fh:
+                for raw in fh:
+                    raw = raw.rstrip("\n")
+                    if not raw:
+                        continue
+                    # Expected format: "YYYY-MM-DDTHH:MM:SS.ffffff key"
+                    parts = raw.split(" ", 1)
+                    if len(parts) != 2:
+                        # Skip malformed lines
+                        logger.debug("Skipping malformed keyboard log line: %r", raw)
+                        continue
+                    ts_part, key = parts[0], parts[1]
+                    date_str = ts_part[:10]        # YYYY-MM-DD
+                    time_str = ts_part[11:19]      # HH:MM:SS
+                    day_map.setdefault(date_str, []).append({"time": time_str, "key": key})
+        except OSError:
+            pass
+
+    # Return sorted by date
+    return [
+        {"date": date, "entries": entries}
+        for date, entries in sorted(day_map.items())
+    ]
 
 
 def _list_files(
