@@ -18,10 +18,16 @@ import mss.tools
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
+from monitoring.utils import dated_subdir
 
 logger = logging.getLogger(__name__)
 
 _AGENT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screen_agent.py")
+
+
+def _dated_subdir(base_dir: str) -> str:
+    """Wrapper kept for backward compatibility; delegates to shared utility."""
+    return dated_subdir(base_dir)
 
 
 def _resolve_python_executable() -> str:
@@ -324,9 +330,8 @@ class ScreenRecorder:
             height = monitor["height"]
             while not self._stop_event.is_set():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                final_filename = os.path.join(
-                    config.RECORDINGS_DIR, f"screen_{timestamp}.mp4"
-                )
+                day_dir = _dated_subdir(config.RECORDINGS_DIR)
+                final_filename = os.path.join(day_dir, f"screen_{timestamp}.mp4")
                 active_filename = final_filename.replace(".mp4", "_active.mp4")
                 writer, used_codec = self._open_writer(active_filename, width, height)
                 # Check if VideoWriter was successfully initialized
@@ -389,8 +394,9 @@ class ScreenRecorder:
             while not self._stop_event.wait(config.SCREENSHOT_INTERVAL):
                 try:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    day_dir = _dated_subdir(config.SCREENSHOTS_DIR)
                     filename = os.path.join(
-                        config.SCREENSHOTS_DIR, f"screenshot_{timestamp}_{counter:04d}.png"
+                        day_dir, f"screenshot_{timestamp}_{counter:04d}.png"
                     )
                     img = sct.grab(monitor)
                     mss.tools.to_png(img.rgb, img.size, output=filename)

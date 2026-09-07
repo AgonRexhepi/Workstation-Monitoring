@@ -29,6 +29,7 @@ sys.modules.setdefault("cv2", cv2_mock)
 pynput_mock = MagicMock()
 sys.modules.setdefault("pynput", pynput_mock)
 sys.modules.setdefault("pynput.keyboard", pynput_mock.keyboard)
+sys.modules.setdefault("pynput.mouse", pynput_mock.mouse)
 
 # pywin32 – Windows only
 sys.modules.setdefault("win32serviceutil", MagicMock())
@@ -59,9 +60,11 @@ class TestConfig(unittest.TestCase):
             "DASHBOARD_HOST",
             "DASHBOARD_PORT",
             "MAX_STORAGE_MB",
+            "DELETE_DATA",
             # Feature flags
             "WEBCAM_RECORD",
             "WEBCAM_PHOTO",
+            "WEBCAM_PHOTO_ON_ACTIVITY",
             "SCREEN_RECORD",
             "SCREEN_SHOT",
             "KEY_LOGGER",
@@ -99,12 +102,14 @@ class TestStorageManager(unittest.TestCase):
             "SCREENSHOTS_DIR": config.SCREENSHOTS_DIR,
             "LOGS_DIR": config.LOGS_DIR,
             "WEBCAM_DIR": config.WEBCAM_DIR,
+            "WEBCAM_PHOTOS_DIR": config.WEBCAM_PHOTOS_DIR,
             "KEYBOARD_LOG_FILE": config.KEYBOARD_LOG_FILE,
         }
         config.RECORDINGS_DIR = os.path.join(self._tmp, "recordings")
         config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
+        config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
         config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
 
     def tearDown(self):
@@ -114,7 +119,7 @@ class TestStorageManager(unittest.TestCase):
 
     def test_ensure_directories_creates_dirs(self):
         store.ensure_directories()
-        for attr in ("RECORDINGS_DIR", "SCREENSHOTS_DIR", "LOGS_DIR", "WEBCAM_DIR"):
+        for attr in ("RECORDINGS_DIR", "SCREENSHOTS_DIR", "LOGS_DIR", "WEBCAM_DIR", "WEBCAM_PHOTOS_DIR"):
             self.assertTrue(
                 os.path.isdir(getattr(config, attr)), f"{attr} not created"
             )
@@ -124,6 +129,7 @@ class TestStorageManager(unittest.TestCase):
         self.assertEqual(store.list_screen_recordings(), [])
         self.assertEqual(store.list_webcam_recordings(), [])
         self.assertEqual(store.list_screenshots(), [])
+        self.assertEqual(store.list_webcam_photos(), [])
 
     def test_list_files_found(self):
         store.ensure_directories()
@@ -159,7 +165,7 @@ class TestStorageManager(unittest.TestCase):
     def test_storage_summary_keys(self):
         store.ensure_directories()
         summary = store.storage_summary()
-        for key in ("total_mb", "max_mb", "recordings", "webcam", "screenshots"):
+        for key in ("total_mb", "max_mb", "recordings", "webcam", "screenshots", "webcam_photos"):
             self.assertIn(key, summary)
 
     def test_age_policy_removes_old_file(self):
@@ -206,6 +212,7 @@ class TestDashboard(unittest.TestCase):
         config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
+        config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
         config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
         store.ensure_directories()
 
@@ -253,6 +260,11 @@ class TestDashboard(unittest.TestCase):
     def test_webcam_page(self):
         self._login()
         resp = self._client.get("/webcam")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_webcam_photos_page(self):
+        self._login()
+        resp = self._client.get("/webcam_photos")
         self.assertEqual(resp.status_code, 200)
 
     def test_screenshots_page(self):

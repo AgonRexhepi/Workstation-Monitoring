@@ -18,7 +18,7 @@ from flask import (
     redirect,
     url_for,
     session,
-    send_file,
+    send_from_directory,
     abort,
     flash,
 )
@@ -76,6 +76,18 @@ def logout():
 # Dashboard routes
 # ------------------------------------------------------------------
 
+def _is_safe(target: str, allowed_dirs: list) -> bool:
+    """Return True if *target* is strictly inside one of the *allowed_dirs*."""
+    for allowed_dir in allowed_dirs:
+        try:
+            if os.path.commonpath([target, allowed_dir]) == allowed_dir:
+                return True
+        except ValueError:
+            # commonpath raises ValueError on mixed drive letters (Windows)
+            pass
+    return False
+
+
 @app.route("/")
 @login_required
 def index():
@@ -98,11 +110,37 @@ def webcam():
     return render_template("recordings.html", items=items, title="Webcam Recordings")
 
 
+@app.route("/webcam_photos")
+@login_required
+def webcam_photos():
+    items = store.list_webcam_photos()
+    return render_template("webcam_photos.html", items=items)
+
+
 @app.route("/screenshots")
 @login_required
 def screenshots():
     items = store.list_screenshots()
     return render_template("screenshots.html", items=items)
+
+
+@app.route("/view_image")
+@login_required
+def view_image():
+    """Serve an image file inline for in-browser preview."""
+    path = request.args.get("path", "")
+    abs_path = os.path.realpath(os.path.abspath(path))
+    allowed = [
+        os.path.realpath(os.path.abspath(config.SCREENSHOTS_DIR)),
+        os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
+    ]
+    if not _is_safe(abs_path, allowed):
+        abort(403)
+    if not os.path.isfile(abs_path):
+        abort(404)
+    directory = os.path.dirname(abs_path)
+    filename = os.path.basename(abs_path)
+    return send_from_directory(directory, filename)
 
 
 @app.route("/keyboard")
@@ -132,24 +170,16 @@ def download():
         os.path.realpath(os.path.abspath(config.RECORDINGS_DIR)),
         os.path.realpath(os.path.abspath(config.SCREENSHOTS_DIR)),
         os.path.realpath(os.path.abspath(config.WEBCAM_DIR)),
+        os.path.realpath(os.path.abspath(config.WEBCAM_PHOTOS_DIR)),
         os.path.realpath(os.path.abspath(config.LOGS_DIR)),
     ]
-
-    def _is_safe(target: str, allowed_dirs: list) -> bool:
-        for allowed_dir in allowed_dirs:
-            try:
-                if os.path.commonpath([target, allowed_dir]) == allowed_dir:
-                    return True
-            except ValueError:
-                # commonpath raises ValueError on mixed drive letters (Windows)
-                pass
-        return False
-
     if not _is_safe(abs_path, allowed):
         abort(403)
     if not os.path.isfile(abs_path):
         abort(404)
-    return send_file(abs_path, as_attachment=True)
+    directory = os.path.dirname(abs_path)
+    filename = os.path.basename(abs_path)
+    return send_from_directory(directory, filename, as_attachment=True)
 
 
 # ------------------------------------------------------------------

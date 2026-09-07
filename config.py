@@ -77,6 +77,8 @@ SEGMENT_DURATION_SECONDS = 1800  # 30-minute video segments
 # ------------------------------------------------------------------
 # Maximum age (in days) before recordings are automatically purged
 MAX_RECORDING_AGE_DAYS = 30
+# DELETE_DATA: alias used by the automatic cleanup script (days)
+DELETE_DATA = MAX_RECORDING_AGE_DAYS
 # Maximum total disk usage in MB before oldest files are removed
 MAX_STORAGE_MB = 10_240           # 10 GB
 
@@ -85,6 +87,10 @@ MAX_STORAGE_MB = 10_240           # 10 GB
 # ------------------------------------------------------------------
 WEBCAM_RECORD = 0    # continuous webcam video recording
 WEBCAM_PHOTO  = 1    # periodic webcam snapshots (one photo per interval)
+# When True, webcam photos are taken on keyboard/mouse activity instead of
+# (only) on a fixed timer.  WEBCAM_PHOTO_INTERVAL still acts as the minimum
+# gap between consecutive captures.
+WEBCAM_PHOTO_ON_ACTIVITY = True
 SCREEN_RECORD = 0    # continuous screen video recording
 SCREEN_SHOT   = 1    # periodic screenshots
 KEY_LOGGER    = 1    # keyboard activity logging

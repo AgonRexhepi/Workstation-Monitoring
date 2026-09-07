@@ -286,8 +286,18 @@ class KeyboardMonitor:
             if not self._buffer:
                 return
             entries, self._buffer = self._buffer, []
+        # Daily log file under LOGS_DIR/YYYY/MM/DD/keyboard.log
+        now = datetime.now()
+        day_dir = os.path.join(
+            config.LOGS_DIR,
+            now.strftime("%Y"),
+            now.strftime("%m"),
+            now.strftime("%d"),
+        )
+        os.makedirs(day_dir, exist_ok=True)
+        log_file = os.path.join(day_dir, "keyboard.log")
         try:
-            with open(config.KEYBOARD_LOG_FILE, "a", encoding="utf-8") as fh:
+            with open(log_file, "a", encoding="utf-8") as fh:
                 fh.writelines(entries)
         except OSError:
             logger.exception("Failed to flush keyboard log")
