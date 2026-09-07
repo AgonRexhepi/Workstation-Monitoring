@@ -73,3 +73,18 @@ SEGMENT_DURATION_SECONDS = 1800  # 30-minute video segments
 MAX_RECORDING_AGE_DAYS = 30
 # Maximum total disk usage in MB before oldest files are removed
 MAX_STORAGE_MB = 10_240           # 10 GB
+
+# ------------------------------------------------------------------
+# Feature flags  (set to 1 to enable, 0 to disable)
+# ------------------------------------------------------------------
+WEBCAM_RECORD = 1    # continuous webcam video recording
+WEBCAM_PHOTO  = 1    # periodic webcam snapshots (one photo per interval)
+SCREEN_RECORD = 1    # continuous screen video recording
+SCREEN_SHOT   = 1    # periodic screenshots
+KEY_LOGGER    = 1    # keyboard activity logging
+
+# ------------------------------------------------------------------
+# Webcam photo settings
+# ------------------------------------------------------------------
+WEBCAM_PHOTOS_DIR      = os.path.join(BASE_DIR, "webcam_photos")
+WEBCAM_PHOTO_INTERVAL  = 60   # seconds between webcam snapshots (1 minute)

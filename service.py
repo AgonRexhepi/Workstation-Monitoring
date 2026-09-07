@@ -25,7 +25,7 @@ sys.path.insert(0, BASE_DIR)
 import config
 import storage.manager as store_manager
 from monitoring.screen import ScreenRecorder
-from monitoring.webcam import WebcamRecorder
+from monitoring.webcam import WebcamRecorder, WebcamPhotoCapture
 from monitoring.keyboard_monitor import KeyboardMonitor
 from dashboard.app import run_dashboard
 
@@ -54,9 +54,10 @@ class MonitoringOrchestrator:
     """Starts and stops all monitoring components."""
 
     def __init__(self):
-        self._screen = ScreenRecorder()
-        self._webcam = WebcamRecorder()
-        self._keyboard = KeyboardMonitor()
+        self._screen = ScreenRecorder() if config.SCREEN_RECORD else None
+        self._webcam = WebcamRecorder() if config.WEBCAM_RECORD else None
+        self._webcam_photo = WebcamPhotoCapture() if config.WEBCAM_PHOTO else None
+        self._keyboard = KeyboardMonitor() if config.KEY_LOGGER else None
         self._storage = store_manager.StorageManager()
         self._dashboard_thread: threading.Thread | None = None
 
@@ -64,9 +65,14 @@ class MonitoringOrchestrator:
         logger.info("Starting monitoring components …")
         store_manager.ensure_directories()
         self._storage.start()
-        self._keyboard.start()
-        self._screen.start()
-        self._webcam.start()
+        if self._keyboard:
+            self._keyboard.start()
+        if self._screen:
+            self._screen.start()
+        if self._webcam:
+            self._webcam.start()
+        if self._webcam_photo:
+            self._webcam_photo.start()
         self._dashboard_thread = threading.Thread(
             target=run_dashboard, daemon=True, name="dashboard"
         )
@@ -79,9 +85,14 @@ class MonitoringOrchestrator:
 
     def stop(self):
         logger.info("Stopping monitoring components …")
-        self._screen.stop()
-        self._webcam.stop()
-        self._keyboard.stop()
+        if self._screen:
+            self._screen.stop()
+        if self._webcam:
+            self._webcam.stop()
+        if self._webcam_photo:
+            self._webcam_photo.stop()
+        if self._keyboard:
+            self._keyboard.stop()
         self._storage.stop()
         logger.info("All components stopped.")
 

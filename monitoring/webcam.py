@@ -128,3 +128,56 @@ class WebcamRecorder:
                 except OSError:
                     logger.debug("Could not remove empty webcam segment: %s", filename)
                 logger.warning("Dropped empty webcam segment: %s", filename)
+
+
+class WebcamPhotoCapture:
+    """Takes a single JPEG snapshot from the webcam at a configurable interval."""
+
+    def __init__(self):
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            logger.warning("WebcamPhotoCapture already running")
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._capture_loop, daemon=True, name="webcam-photo"
+        )
+        self._thread.start()
+        logger.info("WebcamPhotoCapture started")
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=10)
+        logger.info("WebcamPhotoCapture stopped")
+
+    def _capture_loop(self):
+        os.makedirs(config.WEBCAM_PHOTOS_DIR, exist_ok=True)
+        while not self._stop_event.wait(config.WEBCAM_PHOTO_INTERVAL):
+            cap = cv2.VideoCapture(config.WEBCAM_INDEX)
+            try:
+                if not cap.isOpened():
+                    logger.warning(
+                        "WebcamPhotoCapture: webcam index %d not available",
+                        config.WEBCAM_INDEX,
+                    )
+                    continue
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.WEBCAM_WIDTH)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.WEBCAM_HEIGHT)
+                ret, frame = cap.read()
+                if not ret:
+                    logger.warning("WebcamPhotoCapture: frame read failed")
+                    continue
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = os.path.join(
+                    config.WEBCAM_PHOTOS_DIR, f"webcam_photo_{timestamp}.jpg"
+                )
+                cv2.imwrite(filename, frame)
+                logger.info("Webcam photo saved: %s", filename)
+            except Exception:
+                logger.exception("Error in webcam photo capture loop")
+            finally:
+                cap.release()

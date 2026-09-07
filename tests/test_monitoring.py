@@ -8,6 +8,7 @@ they validate configuration, storage helpers, and dashboard routing.
 import os
 import sys
 import time
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
@@ -58,8 +59,24 @@ class TestConfig(unittest.TestCase):
             "DASHBOARD_HOST",
             "DASHBOARD_PORT",
             "MAX_STORAGE_MB",
+            # Feature flags
+            "WEBCAM_RECORD",
+            "WEBCAM_PHOTO",
+            "SCREEN_RECORD",
+            "SCREEN_SHOT",
+            "KEY_LOGGER",
+            # Webcam photo settings
+            "WEBCAM_PHOTOS_DIR",
+            "WEBCAM_PHOTO_INTERVAL",
         ):
             self.assertTrue(hasattr(config, attr), f"config.{attr} missing")
+
+    def test_feature_flags_are_int(self):
+        for flag in ("WEBCAM_RECORD", "WEBCAM_PHOTO", "SCREEN_RECORD", "SCREEN_SHOT", "KEY_LOGGER"):
+            self.assertIn(getattr(config, flag), (0, 1), f"config.{flag} must be 0 or 1")
+
+    def test_webcam_photo_interval_positive(self):
+        self.assertGreater(config.WEBCAM_PHOTO_INTERVAL, 0)
 
     def test_fps_positive(self):
         self.assertGreater(config.SCREEN_FPS, 0)
@@ -93,7 +110,6 @@ class TestStorageManager(unittest.TestCase):
     def tearDown(self):
         for k, v in self._orig_dirs.items():
             setattr(config, k, v)
-        import shutil
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_ensure_directories_creates_dirs(self):
@@ -200,7 +216,6 @@ class TestDashboard(unittest.TestCase):
         self._client = flask_app.test_client()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _login(self):
@@ -270,6 +285,39 @@ class TestDashboard(unittest.TestCase):
         self._login()
         resp = self._client.get("/logout", follow_redirects=True)
         self.assertIn(b"Supervisor Login", resp.data)
+
+
+class TestWebcamPhotoCapture(unittest.TestCase):
+    """Tests for the periodic webcam snapshot feature."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._orig_photos_dir = config.WEBCAM_PHOTOS_DIR
+        self._orig_interval = config.WEBCAM_PHOTO_INTERVAL
+        config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
+        config.WEBCAM_PHOTO_INTERVAL = 60
+
+    def tearDown(self):
+        config.WEBCAM_PHOTOS_DIR = self._orig_photos_dir
+        config.WEBCAM_PHOTO_INTERVAL = self._orig_interval
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_start_stop(self):
+        from monitoring.webcam import WebcamPhotoCapture
+        cap = WebcamPhotoCapture()
+        cap.start()
+        self.assertTrue(cap._thread.is_alive())
+        cap.stop()
+        self.assertFalse(cap._thread.is_alive())
+
+    def test_double_start_is_idempotent(self):
+        from monitoring.webcam import WebcamPhotoCapture
+        cap = WebcamPhotoCapture()
+        cap.start()
+        thread_id = id(cap._thread)
+        cap.start()  # second call should be a no-op
+        self.assertEqual(id(cap._thread), thread_id)
+        cap.stop()
 
 
 if __name__ == "__main__":
