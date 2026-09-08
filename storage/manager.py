@@ -111,11 +111,26 @@ class StorageManager:
     def _enforce_age_policy(self):
         # Use DELETE_DATA (days) as the retention period
         cutoff = time.time() - config.DELETE_DATA * 86400
+
         for directory in _all_dirs():
-            for path in Path(directory).rglob("*"):
+            directory = Path(directory)
+
+            # Delete old files
+            for path in directory.rglob("*"):
                 if path.is_file() and path.stat().st_mtime < cutoff:
                     path.unlink(missing_ok=True)
                     logger.info("Removed aged file: %s", path)
+
+            # Remove empty directories
+            # Process deepest directories first
+            for path in sorted(directory.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                if path.is_dir():
+                    try:
+                        path.rmdir()
+                        logger.info("Removed empty directory: %s", path)
+                    except OSError:
+                        # Directory is not empty
+                        pass
 
     def _enforce_size_policy(self):
         max_bytes = config.MAX_STORAGE_MB * 1024 * 1024
