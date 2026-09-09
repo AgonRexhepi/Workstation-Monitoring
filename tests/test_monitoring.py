@@ -277,6 +277,30 @@ class TestKeyboardLogging(unittest.TestCase):
         self.assertEqual(format_logged_key(SimpleNamespace(char=" ", name="space")), "[space]")
         self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="enter")), "[enter]")
 
+    def test_format_logged_key_normalizes_aliases_and_combinations(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="return")), "[enter]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="esc")), "[escape]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="f5")), "[f5]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+tab")), "[alt+tab]")
+
+    def test_format_logged_key_formats_ctrl_shortcuts_from_control_chars(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x01", name=None)), "[ctrl+a]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x03", name=None)), "[ctrl+c]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x16", name=None)), "[ctrl+v]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x18", name=None)), "[ctrl+x]")
+
+    def test_format_logged_key_decodes_alt_codes(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+128")), "Ç")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+135")), "ç")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+0203")), "Ë")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+137")), "ë")
+
+    def test_format_logged_key_formats_vk_fallbacks(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=65)), "a")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=96)), "0")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=116)), "[f5]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=8)), "[backspace]")
+
     def test_keyboard_monitor_buffers_actual_key(self):
         monitor = KeyboardMonitor()
         monitor._on_press(SimpleNamespace(char="b", name=None))
