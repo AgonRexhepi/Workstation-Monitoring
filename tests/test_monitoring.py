@@ -11,6 +11,7 @@ import time
 import shutil
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -50,6 +51,9 @@ sys.path.insert(0, os.path.abspath(ROOT))
 
 import config
 import storage.manager as store
+from monitoring.keyboard_monitor import KeyboardMonitor
+from monitoring.keylogger_agent import write_activity_event
+from monitoring.utils import format_logged_key
 
 
 def _keyboard_log_path(root: str, date_str: str) -> Path:
@@ -254,6 +258,48 @@ class TestStorageManager(unittest.TestCase):
         self.assertEqual(summary["webcam_photos_today"], 1)
         self.assertEqual(summary["keylogger_days"], 2)
         self.assertEqual(summary["keylogger_days_today"], 1)
+
+
+class TestKeyboardLogging(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._orig_keyboard_dir = config.KEYBOARD_DIR
+        config.KEYBOARD_DIR = os.path.join(self._tmp, "keyboard")
+
+    def tearDown(self):
+        config.KEYBOARD_DIR = self._orig_keyboard_dir
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_format_logged_key_uses_printable_char(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char="a", name=None)), "a")
+
+    def test_format_logged_key_normalizes_special_keys(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=" ", name="space")), "[space]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="enter")), "[enter]")
+
+    def test_keyboard_monitor_buffers_actual_key(self):
+        monitor = KeyboardMonitor()
+        monitor._on_press(SimpleNamespace(char="b", name=None))
+        self.assertEqual(len(monitor._buffer), 1)
+        self.assertTrue(monitor._buffer[0].endswith(" b\n"))
+
+    def test_keylogger_agent_writes_normalized_special_key(self):
+        logger = MagicMock()
+        lock = MagicMock()
+        lock.__enter__ = MagicMock(return_value=lock)
+        lock.__exit__ = MagicMock(return_value=False)
+
+        write_activity_event(
+            keyboard_dir=config.KEYBOARD_DIR,
+            logger=logger,
+            write_lock=lock,
+            key=SimpleNamespace(char=None, name="space"),
+        )
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, today)
+        self.assertTrue(log_path.exists())
+        self.assertTrue(log_path.read_text(encoding="utf-8").endswith(" [space]\n"))
 
     def test_age_policy_removes_old_file(self):
         store.ensure_directories()
