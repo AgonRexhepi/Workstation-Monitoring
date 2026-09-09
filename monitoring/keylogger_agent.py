@@ -143,9 +143,6 @@ def write_activity_event(
     now = datetime.now()
 
     log_file = get_daily_log_file(keyboard_dir)
-    logged_key = format_logged_key(key)
-
-    # key1 = format_logged_key(key)
 
     entry = (
         f"{now.isoformat(timespec='seconds')} "
