@@ -117,11 +117,11 @@ def test_keyboard_monitor():
         monitor.stop()
         
         # Check if log file was created
-        if os.path.isfile(config.KEYBOARD_LOG_FILE):
-            with open(config.KEYBOARD_LOG_FILE, 'r', encoding='utf-8') as f:
+        if os.path.isfile(config.KEYBOARD_DIR):
+            with open(config.KEYBOARD_DIR, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             if lines:
-                logger.info("✓ Keyboard log file created: %s", config.KEYBOARD_LOG_FILE)
+                logger.info("✓ Keyboard log file created: %s", config.KEYBOARD_DIR)
                 logger.info("✓ Log entries: %d", len(lines))
                 logger.info("RESULT: PASS\n")
                 return True

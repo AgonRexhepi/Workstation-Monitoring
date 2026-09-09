@@ -10,10 +10,11 @@ import os
 # ------------------------------------------------------------------
 BASE_DIR = os.path.join("C:\\", "WorkstationMonitor")
 
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
 RECORDINGS_DIR = os.path.join(BASE_DIR, "recordings")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
-LOGS_DIR = os.path.join(BASE_DIR, "logs")
 WEBCAM_DIR = os.path.join(BASE_DIR, "webcam")
+KEYBOARD_DIR = os.path.join(BASE_DIR, "keyboard")
 
 # ------------------------------------------------------------------
 # Screen recording
@@ -41,8 +42,8 @@ WEBCAM_PHOTO_INTERVAL  = 60   # seconds between webcam snapshots (1 minute)
 # ------------------------------------------------------------------
 # Keyboard monitoring
 # ------------------------------------------------------------------
-KEYBOARD_LOG_FILE = os.path.join(LOGS_DIR, "keyboard.log")
-KEYBOARD_FLUSH_INTERVAL = 5      # seconds between log flushes
+KEYBOARD_DIR = os.path.join(BASE_DIR, "keyboard")
+KEYBOARD_FLUSH_INTERVAL = 5
 
 # ------------------------------------------------------------------
 # Service settings

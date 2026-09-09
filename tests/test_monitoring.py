@@ -111,14 +111,14 @@ class TestStorageManager(unittest.TestCase):
             "LOGS_DIR": config.LOGS_DIR,
             "WEBCAM_DIR": config.WEBCAM_DIR,
             "WEBCAM_PHOTOS_DIR": config.WEBCAM_PHOTOS_DIR,
-            "KEYBOARD_LOG_FILE": config.KEYBOARD_LOG_FILE,
+            "KEYBOARD_DIR": config.KEYBOARD_DIR,
         }
         config.RECORDINGS_DIR = os.path.join(self._tmp, "recordings")
         config.SCREENSHOTS_DIR = os.path.join(self._tmp, "screenshots")
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
         config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
-        config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
+        config.KEYBOARD_DIR = os.path.join(self._tmp, "logs", "keyboard.log")
 
     def tearDown(self):
         for k, v in self._orig_dirs.items():
@@ -156,14 +156,14 @@ class TestStorageManager(unittest.TestCase):
 
     def test_keyboard_log_reads_lines(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_LOG_FILE)
+        log_path = Path(config.KEYBOARD_DIR)
         log_path.write_text("line1\nline2\nline3\n", encoding="utf-8")
         lines = store.get_keyboard_log_lines()
         self.assertEqual(len(lines), 3)
 
     def test_keyboard_log_max_lines(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_LOG_FILE)
+        log_path = Path(config.KEYBOARD_DIR)
         log_path.write_text(
             "\n".join(f"entry {i}" for i in range(1000)) + "\n", encoding="utf-8"
         )
@@ -177,7 +177,7 @@ class TestStorageManager(unittest.TestCase):
 
     def test_keyboard_log_by_day_groups_by_date(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_LOG_FILE)
+        log_path = Path(config.KEYBOARD_DIR)
         log_path.write_text(
             "2024-01-01T10:00:00.000000 a\n"
             "2024-01-01T10:00:01.000000 b\n"
@@ -196,7 +196,7 @@ class TestStorageManager(unittest.TestCase):
     def test_keyboard_log_by_day_all_lines(self):
         """All lines should be returned (no 500-row cap)."""
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_LOG_FILE)
+        log_path = Path(config.KEYBOARD_DIR)
         entries = "\n".join(
             f"2024-01-01T10:00:{i:02d}.000000 x" for i in range(60)
         ) + "\n"
@@ -225,7 +225,7 @@ class TestStorageManager(unittest.TestCase):
 
         today = datetime.now().strftime("%Y-%m-%d")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        Path(config.KEYBOARD_LOG_FILE).write_text(
+        Path(config.KEYBOARD_DIR).write_text(
             f"{today}T10:00:00.000000 a\n"
             f"{today}T11:00:00.000000 b\n"
             f"{yesterday}T09:00:00.000000 c\n",
@@ -299,7 +299,7 @@ class TestDashboard(unittest.TestCase):
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
         config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
-        config.KEYBOARD_LOG_FILE = os.path.join(self._tmp, "logs", "keyboard.log")
+        config.KEYBOARD_DIR = os.path.join(self._tmp, "logs", "keyboard.log")
         store.ensure_directories()
 
         from dashboard.app import app as flask_app

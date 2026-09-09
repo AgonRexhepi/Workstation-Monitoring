@@ -1,67 +1,367 @@
 """
-Standalone keylogger agent.
+Standalone keyboard activity agent.
 
-This script is spawned by KeyboardMonitor into the active interactive user
-session (via CreateProcessAsUser) so that pynput can reach the user's
-keyboard input – something that is not possible from Session 0 directly.
+This process is spawned by KeyboardMonitor into the active interactive
+user session so that pynput can receive keyboard activity.
+
+IMPORTANT:
+    This agent records only the fact that keyboard activity occurred.
+    It does NOT store key names, characters, typed text, passwords, etc.
 
 Usage:
-    python keylogger_agent.py <path_to_log_file>
+    python keylogger_agent.py <keyboard_root_dir> <diagnostic_log_file>
 """
 
+import logging
 import os
 import sys
-import logging
+import threading
 from datetime import datetime
+from pathlib import Path
 
 from pynput import keyboard
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: keylogger_agent.py <log_file_path>", file=sys.stderr)
-        sys.exit(1)
+AGENT_NAME = "keyboard_agent"
 
-    log_file = sys.argv[1]
-    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
-    diag_log = (
-        sys.argv[2]
-        if len(sys.argv) >= 3
-        else os.path.join(os.path.dirname(os.path.abspath(log_file)), "keyboard_agent.log")
-    )
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
-        handlers=[logging.FileHandler(diag_log, encoding="utf-8")],
-    )
-    logger = logging.getLogger("keyboard_agent")
-    logger.info("Keyboard agent starting")
 
-    # Keep the log file open for the lifetime of the listener to avoid the
-    # overhead of open/close on every keypress.
+def get_daily_log_file(keyboard_dir: str) -> str:
+    """
+    Return today's keyboard activity log file.
+
+    Structure:
+
+        keyboard/
+            YYYY/
+                MM/
+                    DD/
+                        keyboard.log
+    """
+
+    now = datetime.now()
+
+    day_dir = (
+        Path(keyboard_dir)
+        / now.strftime("%Y")
+        / now.strftime("%m")
+        / now.strftime("%d")
+    )
+
+    day_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    return str(day_dir / "keyboard.log")
+
+
+def setup_logger(diag_log: str) -> logging.Logger:
+    """
+    Configure diagnostic logger.
+
+    Diagnostic logs remain flat:
+
+        C:\\WorkstationMonitor\\logs\\keyboard_agent.log
+    """
+
+    diag_log = os.path.abspath(diag_log)
+
+    log_dir = os.path.dirname(diag_log)
+
+    if log_dir:
+        os.makedirs(
+            log_dir,
+            exist_ok=True,
+        )
+
+    logger = logging.getLogger(AGENT_NAME)
+
+    logger.setLevel(logging.INFO)
+
+    # Avoid duplicate handlers if setup_logger() is called more than once.
+    logger.handlers.clear()
+
+    handler = logging.FileHandler(
+        diag_log,
+        encoding="utf-8",
+    )
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s - %(message)s"
+    )
+
+    handler.setFormatter(formatter)
+
+    logger.addHandler(handler)
+
+    # Prevent propagation to the root logger.
+    logger.propagate = False
+
+    return logger
+
+
+def ensure_daily_log(
+    keyboard_dir: str,
+    logger: logging.Logger,
+) -> str:
+    """
+    Make sure today's keyboard.log exists.
+    """
+
+    log_file = get_daily_log_file(keyboard_dir)
+
     try:
-        with open(log_file, "a", encoding="utf-8") as fh:
-            def on_press(key: keyboard.Key) -> None:
-                if hasattr(key, "char") and key.char is not None:
-                    char = key.char
-                elif hasattr(key, "name"):
-                    char = f"[{key.name}]"
-                else:
-                    char = str(key)
-                entry = f"{datetime.now().isoformat()} {char}\n"
-                try:
-                    fh.write(entry)
-                    fh.flush()
-                except OSError as exc:
-                    logger.exception("Failed writing keyboard event: %s", exc)
+        Path(log_file).touch(
+            exist_ok=True,
+        )
 
-            with keyboard.Listener(on_press=on_press) as listener:
-                logger.info("Keyboard listener started")
-                listener.join()
-    except Exception:
-        logger.exception("Keyboard agent crashed")
+        return log_file
+
+    except OSError:
+        logger.exception(
+            "Failed to create daily keyboard log: %s",
+            log_file,
+        )
+
         raise
 
 
+def write_activity_event(
+    keyboard_dir: str,
+    logger: logging.Logger,
+    write_lock: threading.Lock,
+) -> None:
+    """
+    Write one generic keyboard activity event.
+
+    No key character/name/content is stored.
+    """
+
+    now = datetime.now()
+
+    log_file = get_daily_log_file(keyboard_dir)
+
+    entry = (
+        f"{now.isoformat(timespec='seconds')} "
+        f"keyboard activity\n"
+    )
+
+    try:
+        # pynput callbacks should remain lightweight.
+        # The lock prevents concurrent writes from overlapping.
+        with write_lock:
+
+            with open(
+                log_file,
+                "a",
+                encoding="utf-8",
+            ) as fh:
+
+                fh.write(entry)
+                fh.flush()
+
+    except OSError:
+        logger.exception(
+            "Failed writing keyboard activity to: %s",
+            log_file,
+        )
+
+
+def main() -> None:
+    """
+    Agent entry point.
+    """
+
+    if len(sys.argv) < 2:
+        print(
+            "Usage: keylogger_agent.py "
+            "<keyboard_root_dir> "
+            "[diagnostic_log_file]",
+            file=sys.stderr,
+        )
+
+        sys.exit(1)
+
+    # ------------------------------------------------------------------
+    # Arguments
+    # ------------------------------------------------------------------
+
+    keyboard_dir = os.path.abspath(
+        sys.argv[1]
+    )
+
+    if len(sys.argv) >= 3:
+
+        diag_log = os.path.abspath(
+            sys.argv[2]
+        )
+
+    else:
+
+        # Fallback only.
+        # In production KeyboardMonitor should explicitly provide
+        # C:\WorkstationMonitor\logs\keyboard_agent.log
+        diag_log = os.path.join(
+            os.path.dirname(keyboard_dir),
+            "logs",
+            "keyboard_agent.log",
+        )
+
+    # ------------------------------------------------------------------
+    # Prepare directories
+    # ------------------------------------------------------------------
+
+    try:
+
+        os.makedirs(
+            keyboard_dir,
+            exist_ok=True,
+        )
+
+    except OSError as exc:
+
+        print(
+            f"Failed to create keyboard directory: {exc}",
+            file=sys.stderr,
+        )
+
+        sys.exit(1)
+
+    # ------------------------------------------------------------------
+    # Logger
+    # ------------------------------------------------------------------
+
+    logger = setup_logger(
+        diag_log
+    )
+
+    logger.info(
+        "Keyboard agent starting"
+    )
+
+    logger.info(
+        "Keyboard root directory: %s",
+        keyboard_dir,
+    )
+
+    logger.info(
+        "Diagnostic log: %s",
+        diag_log,
+    )
+
+    # ------------------------------------------------------------------
+    # Create today's log
+    # ------------------------------------------------------------------
+
+    try:
+
+        daily_log = ensure_daily_log(
+            keyboard_dir,
+            logger,
+        )
+
+        logger.info(
+            "Daily keyboard log: %s",
+            daily_log,
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Keyboard agent initialization failed"
+        )
+
+        sys.exit(1)
+
+    # ------------------------------------------------------------------
+    # Thread synchronization
+    # ------------------------------------------------------------------
+
+    write_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Keyboard callback
+    # ------------------------------------------------------------------
+
+    def on_press(_key) -> None:
+        """
+        Handle keyboard activity.
+
+        IMPORTANT:
+            _key is intentionally ignored.
+
+        We do NOT read:
+            key.char
+            key.name
+            str(key)
+
+        Therefore typed content is never stored.
+        """
+
+        write_activity_event(
+            keyboard_dir=keyboard_dir,
+            logger=logger,
+            write_lock=write_lock,
+        )
+
+    # ------------------------------------------------------------------
+    # Start keyboard listener
+    # ------------------------------------------------------------------
+
+    listener = None
+
+    try:
+
+        listener = keyboard.Listener(
+            on_press=on_press,
+        )
+
+        listener.start()
+
+        logger.info(
+            "Keyboard listener started successfully"
+        )
+
+        # Keep process alive.
+        listener.join()
+
+        logger.info(
+            "Keyboard listener stopped"
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Keyboard agent crashed"
+        )
+
+        raise
+
+    finally:
+
+        if listener is not None:
+
+            try:
+                listener.stop()
+
+            except Exception:
+                logger.exception(
+                    "Failed to stop keyboard listener"
+                )
+
+
 if __name__ == "__main__":
-    main()
+
+    try:
+
+        main()
+
+    except KeyboardInterrupt:
+
+        pass
+
+    except Exception:
+
+        # Last-resort diagnostic output.
+        # Logger normally handles the exception above.
+        sys.exit(1)

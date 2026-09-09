@@ -23,6 +23,7 @@ def _all_dirs():
         config.LOGS_DIR,
         config.WEBCAM_DIR,
         config.WEBCAM_PHOTOS_DIR,
+        config.KEYBOARD_DIR,
     ]
 
 
