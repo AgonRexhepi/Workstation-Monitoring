@@ -21,7 +21,6 @@ from datetime import datetime
 from pathlib import Path
 
 from pynput import keyboard
-from monitoring.utils import format_logged_key
 
 from utils import format_logged_key
 

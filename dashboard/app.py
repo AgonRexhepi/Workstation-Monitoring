@@ -364,7 +364,7 @@ def single_log(date):
     entries = selected_day.get("entries", [])
 
     # --------------------------------------------------------------
-    # Search inside the keyboard log
+    # Search inside the keyboard log and time
     # --------------------------------------------------------------
     search = request.args.get("search", "").strip().lower()
 
@@ -373,8 +373,11 @@ def single_log(date):
 
         for entry in entries:
             key = str(entry.get("key", ""))
+            time = str(entry.get("time", ""))
 
             if search in key.lower():
+                filtered_entries.append(entry)
+            elif search in time.lower():
                 filtered_entries.append(entry)
 
         entries = filtered_entries
