@@ -52,6 +52,11 @@ import config
 import storage.manager as store
 
 
+def _keyboard_log_path(root: str, date_str: str) -> Path:
+    year, month, day = date_str.split("-")
+    return Path(root) / year / month / day / "keyboard.log"
+
+
 class TestConfig(unittest.TestCase):
     def test_required_attrs(self):
         for attr in (
@@ -118,7 +123,7 @@ class TestStorageManager(unittest.TestCase):
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
         config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
-        config.KEYBOARD_DIR = os.path.join(self._tmp, "logs", "keyboard.log")
+        config.KEYBOARD_DIR = os.path.join(self._tmp, "keyboard")
 
     def tearDown(self):
         for k, v in self._orig_dirs.items():
@@ -156,14 +161,16 @@ class TestStorageManager(unittest.TestCase):
 
     def test_keyboard_log_reads_lines(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_DIR)
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text("line1\nline2\nline3\n", encoding="utf-8")
         lines = store.get_keyboard_log_lines()
         self.assertEqual(len(lines), 3)
 
     def test_keyboard_log_max_lines(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_DIR)
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             "\n".join(f"entry {i}" for i in range(1000)) + "\n", encoding="utf-8"
         )
@@ -177,13 +184,16 @@ class TestStorageManager(unittest.TestCase):
 
     def test_keyboard_log_by_day_groups_by_date(self):
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_DIR)
-        log_path.write_text(
+        jan_1_log = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        jan_2_log = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-02")
+        jan_1_log.parent.mkdir(parents=True, exist_ok=True)
+        jan_2_log.parent.mkdir(parents=True, exist_ok=True)
+        jan_1_log.write_text(
             "2024-01-01T10:00:00.000000 a\n"
-            "2024-01-01T10:00:01.000000 b\n"
-            "2024-01-02T11:00:00.000000 c\n",
+            "2024-01-01T10:00:01.000000 b\n",
             encoding="utf-8",
         )
+        jan_2_log.write_text("2024-01-02T11:00:00.000000 c\n", encoding="utf-8")
         days = store.get_keyboard_log_by_day()
         self.assertEqual(len(days), 2)
         self.assertEqual(days[0]["date"], "2024-01-01")
@@ -196,7 +206,8 @@ class TestStorageManager(unittest.TestCase):
     def test_keyboard_log_by_day_all_lines(self):
         """All lines should be returned (no 500-row cap)."""
         store.ensure_directories()
-        log_path = Path(config.KEYBOARD_DIR)
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         entries = "\n".join(
             f"2024-01-01T10:00:{i:02d}.000000 x" for i in range(60)
         ) + "\n"
@@ -225,12 +236,16 @@ class TestStorageManager(unittest.TestCase):
 
         today = datetime.now().strftime("%Y-%m-%d")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        Path(config.KEYBOARD_DIR).write_text(
+        today_log = _keyboard_log_path(config.KEYBOARD_DIR, today)
+        yesterday_log = _keyboard_log_path(config.KEYBOARD_DIR, yesterday)
+        today_log.parent.mkdir(parents=True, exist_ok=True)
+        yesterday_log.parent.mkdir(parents=True, exist_ok=True)
+        today_log.write_text(
             f"{today}T10:00:00.000000 a\n"
-            f"{today}T11:00:00.000000 b\n"
-            f"{yesterday}T09:00:00.000000 c\n",
+            f"{today}T11:00:00.000000 b\n",
             encoding="utf-8",
         )
+        yesterday_log.write_text(f"{yesterday}T09:00:00.000000 c\n", encoding="utf-8")
 
         summary = store.storage_summary()
         self.assertEqual(summary["screenshots"], 2)
@@ -299,7 +314,7 @@ class TestDashboard(unittest.TestCase):
         config.LOGS_DIR = os.path.join(self._tmp, "logs")
         config.WEBCAM_DIR = os.path.join(self._tmp, "webcam")
         config.WEBCAM_PHOTOS_DIR = os.path.join(self._tmp, "webcam_photos")
-        config.KEYBOARD_DIR = os.path.join(self._tmp, "logs", "keyboard.log")
+        config.KEYBOARD_DIR = os.path.join(self._tmp, "keyboard")
         store.ensure_directories()
 
         from dashboard.app import app as flask_app
@@ -406,8 +421,28 @@ class TestDashboard(unittest.TestCase):
 
     def test_keyboard_page(self):
         self._login()
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("2024-01-01T10:00:00.000000 keyboard activity\n", encoding="utf-8")
         resp = self._client.get("/keyboard")
         self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"2024-01-01", resp.data)
+
+    def test_single_keyboard_log_page_reads_nested_daily_log(self):
+        self._login()
+        log_path = _keyboard_log_path(config.KEYBOARD_DIR, "2024-01-01")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "2024-01-01T10:00:00.000000 keyboard activity\n"
+            "2024-01-01T10:05:00.000000 other activity\n",
+            encoding="utf-8",
+        )
+
+        resp = self._client.get("/keyboard/2024-01-01?search=other")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"10:05:00", resp.data)
+        self.assertIn(b"other activity", resp.data)
+        self.assertNotIn(b"10:00:00", resp.data)
 
     def test_system_page(self):
         self._login()
