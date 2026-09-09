@@ -10,6 +10,7 @@ import sys
 import time
 import logging
 from pathlib import Path
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
@@ -27,6 +28,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _today_keyboard_log() -> Path:
+    now = datetime.now()
+    return (
+        Path(config.KEYBOARD_DIR)
+        / now.strftime("%Y")
+        / now.strftime("%m")
+        / now.strftime("%d")
+        / "keyboard.log"
+    )
+
 def test_directories():
     """Test if directories can be created."""
     logger.info("=" * 60)
@@ -39,6 +51,7 @@ def test_directories():
             config.SCREENSHOTS_DIR,
             config.LOGS_DIR,
             config.WEBCAM_DIR,
+            config.KEYBOARD_DIR,
         ]:
             exists = os.path.isdir(directory)
             status = "✓" if exists else "✗"
@@ -116,12 +129,13 @@ def test_keyboard_monitor():
         time.sleep(30)
         monitor.stop()
         
-        # Check if log file was created
-        if os.path.isfile(config.KEYBOARD_DIR):
-            with open(config.KEYBOARD_DIR, 'r', encoding='utf-8') as f:
+        # Check if daily log file was created
+        log_path = _today_keyboard_log()
+        if log_path.is_file():
+            with open(log_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             if lines:
-                logger.info("✓ Keyboard log file created: %s", config.KEYBOARD_DIR)
+                logger.info("✓ Keyboard log file created: %s", log_path)
                 logger.info("✓ Log entries: %d", len(lines))
                 logger.info("RESULT: PASS\n")
                 return True

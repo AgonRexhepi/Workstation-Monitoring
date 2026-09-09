@@ -5,7 +5,7 @@ Strategy
 --------
 * In interactive sessions (debug mode), the monitor uses pynput directly.
 * In Windows Service (Session 0), a user-session agent is spawned via
-  CreateProcessAsUser so that keyboard activity can be observed from the
+  CreateProcessAsUser so that keyboard input can be observed from the
   interactive desktop session.
 
 Keyboard diagnostic/activity logs are stored separately from application logs:
@@ -33,7 +33,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from monitoring.utils import dated_subdir
+from monitoring.utils import dated_subdir, format_logged_key
 
 
 logger = logging.getLogger(__name__)
@@ -606,12 +606,12 @@ class KeyboardMonitor:
 
     def _on_press(self, key):
         """
-        Handle keyboard activity in interactive/debug mode.
+        Handle keyboard input in interactive/debug mode.
 
         Keep the event handling lightweight; actual writing is performed
         by the flush thread.
         """
-
+        logged_key = format_logged_key(key)
         entry = (
             f"{datetime.now().isoformat()} "
             f"{key}\n"

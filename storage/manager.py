@@ -197,7 +197,7 @@ def list_logs() -> list[dict]:
 
 def get_keyboard_log_lines(max_lines: int = 500) -> list[str]:
     """Return the last *max_lines* lines across all daily keyboard log files."""
-    base = Path(config.LOGS_DIR)
+    base = Path(config.KEYBOARD_DIR)
     if not base.exists():
         return []
     # Collect all keyboard.log files sorted oldest→newest
@@ -223,7 +223,7 @@ def get_keyboard_log_by_day() -> list[dict]:
     Days are ordered oldest-first.  All daily log files are read in full –
     there is no row-count limit.
     """
-    base = Path(config.LOGS_DIR)
+    base = Path(config.KEYBOARD_DIR)
     if not base.exists():
         return []
 
