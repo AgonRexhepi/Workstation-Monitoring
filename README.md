@@ -29,7 +29,7 @@ WorkstationMonitorSvc (Windows Service)
 MonitoringOrchestrator
      ├── ScreenRecorder      → C:\WorkstationMonitor\recordings\
      ├── WebcamRecorder      → C:\WorkstationMonitor\webcam\
-     ├── KeyboardMonitor     → C:\WorkstationMonitor\logs\keyboard.log
+     ├── KeyboardMonitor     → C:\WorkstationMonitor\keyboard\YYYY\MM\DD\keyboard.log
      ├── StorageManager      (retention policy enforcement)
      └── Dashboard (Flask)   → http://127.0.0.1:5000/
 ```

