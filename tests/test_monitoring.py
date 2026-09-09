@@ -272,6 +272,17 @@ class TestKeyboardLogging(unittest.TestCase):
 
     def test_format_logged_key_uses_printable_char(self):
         self.assertEqual(format_logged_key(SimpleNamespace(char="a", name=None)), "a")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="0", name=None)), "0")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="9", name=None)), "9")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=",", name=None)), ",")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=".", name=None)), ".")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="!", name=None)), "!")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="?", name=None)), "?")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="+", name=None)), "+")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="-", name=None)), "-")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="*", name=None)), "*")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="/", name=None)), "/")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="%", name=None)), "%")
 
     def test_format_logged_key_normalizes_special_keys(self):
         self.assertEqual(format_logged_key(SimpleNamespace(char=" ", name="space")), "[space]")
@@ -300,6 +311,12 @@ class TestKeyboardLogging(unittest.TestCase):
         self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=96)), "0")
         self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=116)), "[f5]")
         self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=8)), "[backspace]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=188)), ",")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=190)), ".")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=191)), "/")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=107)), "+")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=109)), "-")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=106)), "*")
 
     def test_keyboard_monitor_buffers_actual_key(self):
         monitor = KeyboardMonitor()

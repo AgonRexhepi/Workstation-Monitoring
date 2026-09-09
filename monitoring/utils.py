@@ -65,6 +65,25 @@ SPECIAL_VK_ALIASES = {
     46: "delete",
 }
 
+VK_PRINTABLE_FALLBACKS = {
+    106: "*",
+    107: "+",
+    109: "-",
+    110: ".",
+    111: "/",
+    186: ";",
+    187: "=",
+    188: ",",
+    189: "-",
+    190: ".",
+    191: "/",
+    192: "`",
+    219: "[",
+    220: "\\",
+    221: "]",
+    222: "'",
+}
+
 ALT_CODE_ENCODINGS = {
     128: "cp437",
     135: "cp437",
@@ -147,6 +166,9 @@ def _format_vk(vk: int) -> str | None:
 
     if 96 <= vk <= 105:
         return str(vk - 96)
+
+    if vk in VK_PRINTABLE_FALLBACKS:
+        return _format_char(VK_PRINTABLE_FALLBACKS[vk])
 
     if 32 <= vk <= 126:
         return _format_char(chr(vk).lower() if 65 <= vk <= 90 else chr(vk))
