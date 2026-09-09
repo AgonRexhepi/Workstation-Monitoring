@@ -614,7 +614,7 @@ class KeyboardMonitor:
 
         entry = (
             f"{datetime.now().isoformat()} "
-            f"keyboard activity\n"
+            f"{key}\n"
         )
 
         with self._lock:
