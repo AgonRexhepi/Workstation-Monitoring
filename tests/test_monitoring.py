@@ -272,10 +272,51 @@ class TestKeyboardLogging(unittest.TestCase):
 
     def test_format_logged_key_uses_printable_char(self):
         self.assertEqual(format_logged_key(SimpleNamespace(char="a", name=None)), "a")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="0", name=None)), "0")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="9", name=None)), "9")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=",", name=None)), ",")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=".", name=None)), ".")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="!", name=None)), "!")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="?", name=None)), "?")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="+", name=None)), "+")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="-", name=None)), "-")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="*", name=None)), "*")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="/", name=None)), "/")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="%", name=None)), "%")
 
     def test_format_logged_key_normalizes_special_keys(self):
         self.assertEqual(format_logged_key(SimpleNamespace(char=" ", name="space")), "[space]")
         self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="enter")), "[enter]")
+
+    def test_format_logged_key_normalizes_aliases_and_combinations(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="return")), "[enter]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="esc")), "[escape]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="f5")), "[f5]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+tab")), "[alt+tab]")
+
+    def test_format_logged_key_formats_ctrl_shortcuts_from_control_chars(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x01", name=None)), "[ctrl+a]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x03", name=None)), "[ctrl+c]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x16", name=None)), "[ctrl+v]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char="\x18", name=None)), "[ctrl+x]")
+
+    def test_format_logged_key_decodes_alt_codes(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+128")), "Ç")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+135")), "ç")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+0203")), "Ë")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name="alt+137")), "ë")
+
+    def test_format_logged_key_formats_vk_fallbacks(self):
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=65)), "a")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=96)), "0")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=116)), "[f5]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=8)), "[backspace]")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=188)), ",")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=190)), ".")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=191)), "/")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=107)), "+")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=109)), "-")
+        self.assertEqual(format_logged_key(SimpleNamespace(char=None, name=None, vk=106)), "*")
 
     def test_keyboard_monitor_buffers_actual_key(self):
         monitor = KeyboardMonitor()
