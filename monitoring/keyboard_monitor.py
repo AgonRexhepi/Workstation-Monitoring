@@ -265,7 +265,7 @@ def _spawn_agent_in_user_session(keyboard_dir: str):
             os.path.abspath(keyboard_dir),
         )
 
-        return proc_handle
+        return proc_handle, session_id
 
     except Exception as exc:
         logger.warning(
@@ -298,6 +298,7 @@ class KeyboardMonitor:
 
         # Windows Service / Session 0 agent
         self._agent_handle = None
+        self._agent_session_id = None
         self._agent_lock = threading.Lock()
 
         self._agent_watchdog_thread: threading.Thread | None = None
@@ -344,14 +345,17 @@ class KeyboardMonitor:
                 "spawning user-session agent"
             )
 
-            handle = _spawn_agent_in_user_session(
+            result = _spawn_agent_in_user_session(
                 config.KEYBOARD_DIR
             )
 
-            if handle is not None:
+            if result is not None:
+
+                handle, session_id = result
 
                 with self._agent_lock:
                     self._agent_handle = handle
+                    self._agent_session_id = session_id
 
                 self._using_agent = True
 
@@ -426,6 +430,7 @@ class KeyboardMonitor:
             with self._agent_lock:
                 handle = self._agent_handle
                 self._agent_handle = None
+                self._agent_session_id = None
 
             if handle is not None:
 
@@ -526,11 +531,111 @@ class KeyboardMonitor:
 
         while not self._stop_event.wait(10):
 
+            # --------------------------------------------------------------
+            # Get current active user session
+            # --------------------------------------------------------------
+
+            try:
+                import win32ts
+
+                active_session = (
+                    win32ts.WTSGetActiveConsoleSessionId()
+                )
+
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine active user session: %s",
+                    exc,
+                )
+                continue
+
+            # --------------------------------------------------------------
+            # Get current agent state
+            # --------------------------------------------------------------
+
             with self._agent_lock:
                 handle = self._agent_handle
+                agent_session = self._agent_session_id
 
             if handle is None:
                 continue
+
+            # --------------------------------------------------------------
+            # Session changed
+            # --------------------------------------------------------------
+
+            if (
+                active_session != 0xFFFFFFFF
+                and agent_session is not None
+                and active_session != agent_session
+            ):
+
+                logger.info(
+                    "Keyboard agent is in session %d, "
+                    "but active user session is %d. "
+                    "Restarting agent.",
+                    agent_session,
+                    active_session,
+                )
+
+                try:
+                    win32process.TerminateProcess(
+                        handle,
+                        0,
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "Error terminating old keyboard agent: %s",
+                        exc,
+                    )
+
+                try:
+                    win32api.CloseHandle(handle)
+                except Exception:
+                    pass
+
+                with self._agent_lock:
+                    if self._agent_handle is handle:
+                        self._agent_handle = None
+                        self._agent_session_id = None
+
+                if self._stop_event.is_set():
+                    break
+
+                # ----------------------------------------------------------
+                # Start agent in the NEW active session
+                # ----------------------------------------------------------
+
+                result = _spawn_agent_in_user_session(
+                    config.KEYBOARD_DIR
+                )
+
+                if result is not None:
+
+                    new_handle, new_session_id = result
+
+                    with self._agent_lock:
+                        self._agent_handle = new_handle
+                        self._agent_session_id = new_session_id
+
+                    logger.info(
+                        "Keyboard agent moved to active "
+                        "user session %d",
+                        new_session_id,
+                    )
+
+                else:
+
+                    logger.warning(
+                        "Failed to restart keyboard agent "
+                        "in active user session"
+                    )
+
+                continue
+
+            # --------------------------------------------------------------
+            # Check whether agent process exited
+            # --------------------------------------------------------------
 
             status = win32event.WaitForSingleObject(
                 handle,
@@ -540,9 +645,9 @@ class KeyboardMonitor:
             if status != win32event.WAIT_OBJECT_0:
                 continue
 
-            # ----------------------------------------------------------
-            # Process exited
-            # ----------------------------------------------------------
+            # --------------------------------------------------------------
+            # Agent exited
+            # --------------------------------------------------------------
 
             try:
 
@@ -570,6 +675,7 @@ class KeyboardMonitor:
 
                 if self._agent_handle is handle:
                     self._agent_handle = None
+                    self._agent_session_id = None
 
             if self._stop_event.is_set():
                 break
@@ -580,24 +686,29 @@ class KeyboardMonitor:
                 exit_code,
             )
 
-            new_handle = _spawn_agent_in_user_session(
+            result = _spawn_agent_in_user_session(
                 config.KEYBOARD_DIR
             )
 
-            if new_handle is not None:
+            if result is not None:
+
+                new_handle, new_session_id = result
 
                 with self._agent_lock:
                     self._agent_handle = new_handle
+                    self._agent_session_id = new_session_id
 
                 logger.info(
-                    "Keyboard agent restarted successfully"
+                    "Keyboard agent restarted successfully "
+                    "in session %d",
+                    new_session_id,
                 )
 
             else:
 
                 logger.warning(
                     "Keyboard agent restart failed; "
-                    "will retry"
+                    "will retry",
                 )
 
     # ------------------------------------------------------------------
@@ -614,7 +725,7 @@ class KeyboardMonitor:
         logged_key = format_logged_key(key)
         entry = (
             f"{datetime.now().isoformat()} "
-            f"{key}\n"
+            f"{logged_key}\n"
         )
 
         with self._lock:

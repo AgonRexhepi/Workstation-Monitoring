@@ -103,7 +103,10 @@ def _spawn_agent_in_user_session(
     Launch webcam_agent.py inside the active interactive user session.
 
     Returns:
-        Win32 process handle, or None on failure.
+    Tuple containing:
+        - Win32 process handle
+        - Windows session ID
+    or None on failure.
     """
     user_token = None
     primary_token = None
@@ -221,7 +224,7 @@ def _spawn_agent_in_user_session(
             pid,
         )
 
-        return proc_handle
+        return proc_handle, session_id
 
     except Exception as exc:
         logger.warning(
@@ -505,6 +508,7 @@ class WebcamPhotoCapture:
 
         # Session 0 / user-session agent state
         self._agent_handle = None
+        self._agent_session_id = None
         self._agent_lock = threading.Lock()
         self._agent_watchdog_thread = None
         self._using_agent = False
@@ -556,16 +560,19 @@ class WebcamPhotoCapture:
 
             self._agent_stop_file = stop_file
 
-            handle = _spawn_agent_in_user_session(
+            spawned = _spawn_agent_in_user_session(
                 config.WEBCAM_PHOTOS_DIR,
                 diag_log_file,
                 stop_file,
             )
 
-            if handle is not None:
+            if spawned is not None:
+
+                handle, session_id = spawned
 
                 with self._agent_lock:
                     self._agent_handle = handle
+                    self._agent_session_id = session_id
 
                 self._using_agent = True
 
@@ -579,7 +586,8 @@ class WebcamPhotoCapture:
 
                 logger.info(
                     "WebcamPhotoCapture started "
-                    "(user-session agent, activity_mode=%s)",
+                    "(user-session agent, session=%d, activity_mode=%s)",
+                    session_id,
                     config.WEBCAM_PHOTO_ON_ACTIVITY,
                 )
 
@@ -640,6 +648,7 @@ class WebcamPhotoCapture:
             with self._agent_lock:
                 handle = self._agent_handle
                 self._agent_handle = None
+                self._agent_session_id = None
 
             if handle is not None:
                 try:
@@ -960,13 +969,17 @@ class WebcamPhotoCapture:
         """
         Monitor the user-session webcam agent.
 
-        If the agent exits unexpectedly, attempt to spawn it again.
+        The Windows service runs in Session 0. The webcam agent runs
+        inside the active interactive user session.
+
+        If the active console session changes, the old agent is stopped
+        and a new agent is spawned in the new active session.
         """
         try:
             import win32event
             import win32process
             import win32api
-
+            import win32ts
         except ImportError:
             logger.warning(
                 "Webcam agent watchdog unavailable: "
@@ -978,11 +991,167 @@ class WebcamPhotoCapture:
 
             with self._agent_lock:
                 handle = self._agent_handle
+                agent_session_id = self._agent_session_id
 
             if handle is None:
                 continue
 
-            # Check whether process has exited.
+            # ----------------------------------------------------------
+            # Check active Windows console session
+            # ----------------------------------------------------------
+
+            try:
+                active_session_id = (
+                    win32ts.WTSGetActiveConsoleSessionId()
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine active console session: %s",
+                    exc,
+                )
+                active_session_id = None
+
+            # ----------------------------------------------------------
+            # Session changed
+            # ----------------------------------------------------------
+
+            if (
+                active_session_id is not None
+                and active_session_id != 0xFFFFFFFF
+                and agent_session_id is not None
+                and active_session_id != agent_session_id
+            ):
+                logger.info(
+                    "Active user session changed: %d -> %d. "
+                    "Restarting webcam agent.",
+                    agent_session_id,
+                    active_session_id,
+                )
+
+                # ------------------------------------------------------
+                # Detach old agent from our state
+                # ------------------------------------------------------
+
+                with self._agent_lock:
+                    old_handle = self._agent_handle
+                    old_stop_file = self._agent_stop_file
+
+                    self._agent_handle = None
+                    self._agent_stop_file = None
+                    self._agent_session_id = None
+
+                # ------------------------------------------------------
+                # Ask old agent to stop
+                # ------------------------------------------------------
+
+                if old_stop_file:
+                    try:
+                        with open(old_stop_file, "w", encoding="utf-8"):
+                            pass
+                    except OSError as exc:
+                        logger.debug(
+                            "Could not create old webcam agent "
+                            "stop file: %s",
+                            exc,
+                        )
+
+                # ------------------------------------------------------
+                # Wait for old agent
+                # ------------------------------------------------------
+
+                if old_handle is not None:
+                    try:
+                        wait_rc = win32event.WaitForSingleObject(
+                            old_handle,
+                            3000,
+                        )
+
+                        if wait_rc != win32event.WAIT_OBJECT_0:
+                            try:
+                                win32process.TerminateProcess(
+                                    old_handle,
+                                    0,
+                                )
+                            except Exception as exc:
+                                logger.debug(
+                                    "Could not terminate old webcam "
+                                    "agent: %s",
+                                    exc,
+                                )
+
+                    except Exception as exc:
+                        logger.debug(
+                            "Error waiting for old webcam agent: %s",
+                            exc,
+                        )
+
+                    try:
+                        win32api.CloseHandle(old_handle)
+                    except Exception:
+                        pass
+
+                # ------------------------------------------------------
+                # Remove old stop file
+                # ------------------------------------------------------
+
+                if old_stop_file:
+                    try:
+                        if os.path.exists(old_stop_file):
+                            os.remove(old_stop_file)
+                    except OSError:
+                        pass
+
+                # ------------------------------------------------------
+                # Create a fresh stop file
+                # ------------------------------------------------------
+
+                new_stop_file = os.path.join(
+                    config.LOGS_DIR,
+                    f"webcam_agent_stop_{uuid.uuid4().hex}.flag",
+                )
+
+                diag_log_file = os.path.join(
+                    config.LOGS_DIR,
+                    "webcam_agent.log",
+                )
+
+                with self._agent_lock:
+                    self._agent_stop_file = new_stop_file
+
+                # ------------------------------------------------------
+                # Spawn in the new active session
+                # ------------------------------------------------------
+
+                spawned = _spawn_agent_in_user_session(
+                    config.WEBCAM_PHOTOS_DIR,
+                    diag_log_file,
+                    new_stop_file,
+                )
+
+                if spawned is not None:
+                    new_handle, new_session_id = spawned
+
+                    with self._agent_lock:
+                        self._agent_handle = new_handle
+                        self._agent_session_id = new_session_id
+
+                    logger.info(
+                        "Webcam agent successfully moved to "
+                        "user session %d",
+                        new_session_id,
+                    )
+                else:
+                    logger.warning(
+                        "Failed to respawn webcam agent after "
+                        "session change"
+                    )
+
+                continue
+
+            # ----------------------------------------------------------
+            # Check whether current agent exited
+            # ----------------------------------------------------------
+
             status = win32event.WaitForSingleObject(
                 handle,
                 0,
@@ -992,10 +1161,8 @@ class WebcamPhotoCapture:
                 continue
 
             try:
-                exit_code = (
-                    win32process.GetExitCodeProcess(
-                        handle
-                    )
+                exit_code = win32process.GetExitCodeProcess(
+                    handle
                 )
             except Exception:
                 exit_code = -1
@@ -1008,6 +1175,7 @@ class WebcamPhotoCapture:
             with self._agent_lock:
                 if self._agent_handle is handle:
                     self._agent_handle = None
+                    self._agent_session_id = None
 
             if self._stop_event.is_set():
                 break
@@ -1018,7 +1186,10 @@ class WebcamPhotoCapture:
                 exit_code,
             )
 
-            # Generate a fresh stop file for the restarted agent.
+            # ----------------------------------------------------------
+            # Fresh stop file for restarted agent
+            # ----------------------------------------------------------
+
             old_stop_file = self._agent_stop_file
 
             if old_stop_file:
@@ -1033,30 +1204,33 @@ class WebcamPhotoCapture:
                 f"webcam_agent_stop_{uuid.uuid4().hex}.flag",
             )
 
-            self._agent_stop_file = new_stop_file
-
             diag_log_file = os.path.join(
                 config.LOGS_DIR,
                 "webcam_agent.log",
             )
 
-            new_handle = _spawn_agent_in_user_session(
+            with self._agent_lock:
+                self._agent_stop_file = new_stop_file
+
+            spawned = _spawn_agent_in_user_session(
                 config.WEBCAM_PHOTOS_DIR,
                 diag_log_file,
                 new_stop_file,
             )
 
-            if new_handle is not None:
+            if spawned is not None:
+                new_handle, new_session_id = spawned
 
                 with self._agent_lock:
                     self._agent_handle = new_handle
+                    self._agent_session_id = new_session_id
 
                 logger.info(
-                    "Webcam agent restarted successfully"
+                    "Webcam agent restarted in user session %d",
+                    new_session_id,
                 )
 
             else:
                 logger.warning(
-                    "Webcam agent restart failed; "
-                    "will retry"
+                    "Webcam agent restart failed; will retry"
                 )

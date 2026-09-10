@@ -116,6 +116,7 @@ try:
         _svc_name_ = config.SERVICE_NAME
         _svc_display_name_ = config.SERVICE_DISPLAY_NAME
         _svc_description_ = config.SERVICE_DESCRIPTION
+        _svc_start_type_ = win32service.SERVICE_AUTO_START
 
         def __init__(self, args):
             win32serviceutil.ServiceFramework.__init__(self, args)

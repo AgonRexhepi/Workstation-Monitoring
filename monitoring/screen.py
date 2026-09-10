@@ -111,7 +111,7 @@ def _spawn_agent_in_user_session():
         proc_handle, thread_handle, pid, _tid = proc_info
         win32api.CloseHandle(thread_handle)
         logger.info("Screen agent spawned in user session %d (PID %d)", session_id, pid)
-        return proc_handle, stop_file
+        return proc_handle, stop_file, session_id
     except Exception as exc:
         logger.warning("Could not spawn screen agent in user session: %s", exc)
         return None
@@ -126,6 +126,7 @@ class ScreenRecorder:
         self._screenshot_thread: threading.Thread | None = None
         self._agent_handle = None
         self._agent_stop_file: str | None = None
+        self._agent_session_id: int | None = None
         self._agent_lock = threading.Lock()
         self._agent_watchdog_thread: threading.Thread | None = None
         self._using_agent = False
@@ -145,19 +146,30 @@ class ScreenRecorder:
         if _is_session_0():
             logger.info("ScreenRecorder: detected Session 0, spawning user-session agent")
             spawned = _spawn_agent_in_user_session()
+
             if spawned is not None:
-                handle, stop_file = spawned
+                handle, stop_file, session_id = spawned
+
                 with self._agent_lock:
                     self._agent_handle = handle
                     self._agent_stop_file = stop_file
+                    self._agent_session_id = session_id
+
                 self._using_agent = True
+
                 self._agent_watchdog_thread = threading.Thread(
                     target=self._agent_watchdog_loop,
                     daemon=True,
                     name="screen-agent-watchdog",
                 )
+
                 self._agent_watchdog_thread.start()
-                logger.info("ScreenRecorder started (user-session agent)")
+
+                logger.info(
+                    "ScreenRecorder started (user-session agent, session=%d)",
+                    session_id,
+                )
+
                 return
             logger.warning(
                 "ScreenRecorder: could not spawn user-session agent; "
@@ -200,6 +212,7 @@ class ScreenRecorder:
                 stop_file = self._agent_stop_file
                 self._agent_handle = None
                 self._agent_stop_file = None
+                self._agent_session_id = None
             self._using_agent = False
             if stop_file:
                 try:
@@ -249,21 +262,156 @@ class ScreenRecorder:
         logger.info("ScreenRecorder stopped")
 
     def _agent_watchdog_loop(self):
-        """Respawn the agent if it exits unexpectedly while service is running."""
+        """
+        Monitor the screen agent.
+
+        The Windows service runs in Session 0, while the actual desktop
+        may belong to another interactive session. If the active console
+        session changes, restart the screen agent in the new session.
+        """
         try:
             import win32event
             import win32process
             import win32api
+            import win32ts
         except ImportError:
+            logger.exception(
+                "Screen agent watchdog requires pywin32"
+            )
             return
 
         while not self._stop_event.wait(10):
             with self._agent_lock:
                 handle = self._agent_handle
+                agent_session_id = self._agent_session_id
+
             if handle is None:
                 continue
 
+            # ----------------------------------------------------------
+            # Check whether the interactive session has changed
+            # ----------------------------------------------------------
+
+            try:
+                active_session_id = win32ts.WTSGetActiveConsoleSessionId()
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine active console session: %s",
+                    exc,
+                )
+                active_session_id = None
+
+            if (
+                active_session_id is not None
+                and active_session_id != 0xFFFFFFFF
+                and agent_session_id is not None
+                and active_session_id != agent_session_id
+            ):
+                logger.info(
+                    "Active user session changed: %d -> %d. "
+                    "Restarting screen agent.",
+                    agent_session_id,
+                    active_session_id,
+                )
+
+                # ------------------------------------------------------
+                # Tell old agent to stop
+                # ------------------------------------------------------
+
+                with self._agent_lock:
+                    old_handle = self._agent_handle
+                    old_stop_file = self._agent_stop_file
+
+                    self._agent_handle = None
+                    self._agent_stop_file = None
+                    self._agent_session_id = None
+
+                if old_stop_file:
+                    try:
+                        with open(old_stop_file, "w", encoding="utf-8"):
+                            pass
+                    except OSError as exc:
+                        logger.debug(
+                            "Could not create old screen agent "
+                            "stop file: %s",
+                            exc,
+                        )
+
+                # ------------------------------------------------------
+                # Wait briefly for old agent to exit
+                # ------------------------------------------------------
+
+                if old_handle is not None:
+                    try:
+                        wait_rc = win32event.WaitForSingleObject(
+                            old_handle,
+                            3000,
+                        )
+
+                        if wait_rc != win32event.WAIT_OBJECT_0:
+                            try:
+                                win32process.TerminateProcess(
+                                    old_handle,
+                                    0,
+                                )
+                            except Exception as exc:
+                                logger.debug(
+                                    "Could not terminate old screen "
+                                    "agent: %s",
+                                    exc,
+                                )
+
+                    except Exception as exc:
+                        logger.debug(
+                            "Error waiting for old screen agent: %s",
+                            exc,
+                        )
+
+                    try:
+                        win32api.CloseHandle(old_handle)
+                    except Exception:
+                        pass
+
+                if old_stop_file:
+                    try:
+                        if os.path.exists(old_stop_file):
+                            os.remove(old_stop_file)
+                    except OSError:
+                        pass
+
+                # ------------------------------------------------------
+                # Spawn new agent in the new active session
+                # ------------------------------------------------------
+
+                spawned = _spawn_agent_in_user_session()
+
+                if spawned is not None:
+                    new_handle, new_stop_file, new_session_id = spawned
+
+                    with self._agent_lock:
+                        self._agent_handle = new_handle
+                        self._agent_stop_file = new_stop_file
+                        self._agent_session_id = new_session_id
+
+                    logger.info(
+                        "Screen agent successfully moved to "
+                        "user session %d",
+                        new_session_id,
+                    )
+                else:
+                    logger.warning(
+                        "Failed to respawn screen agent after "
+                        "session change"
+                    )
+
+                continue
+
+            # ----------------------------------------------------------
+            # Check whether the current agent process has exited
+            # ----------------------------------------------------------
+
             status = win32event.WaitForSingleObject(handle, 0)
+
             if status != win32event.WAIT_OBJECT_0:
                 continue
 
@@ -280,23 +428,36 @@ class ScreenRecorder:
             with self._agent_lock:
                 if self._agent_handle is handle:
                     self._agent_handle = None
+                    self._agent_stop_file = None
+                    self._agent_session_id = None
 
             if self._stop_event.is_set():
                 break
 
             logger.warning(
-                "Screen agent exited unexpectedly (code %s); attempting restart",
+                "Screen agent exited unexpectedly (code %s); "
+                "attempting restart",
                 exit_code,
             )
+
             spawned = _spawn_agent_in_user_session()
+
             if spawned is not None:
-                new_handle, stop_file = spawned
+                new_handle, stop_file, new_session_id = spawned
+
                 with self._agent_lock:
                     self._agent_handle = new_handle
                     self._agent_stop_file = stop_file
-            else:
-                logger.warning("Screen agent restart failed; will retry")
+                    self._agent_session_id = new_session_id
 
+                logger.info(
+                    "Screen agent restarted in user session %d",
+                    new_session_id,
+                )
+            else:
+                logger.warning(
+                    "Screen agent restart failed; will retry"
+                )
     # ------------------------------------------------------------------
     # Internal loops
     # ------------------------------------------------------------------
