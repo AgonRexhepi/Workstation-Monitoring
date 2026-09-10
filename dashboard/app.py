@@ -33,7 +33,12 @@ import storage.manager as store
 logger = logging.getLogger(__name__)
 ITEMS_PER_PAGE = config.ITEMS_PER_PAGE
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(
+    __name__,
+    template_folder="templates",
+    static_folder="assets",
+    static_url_path="/assets"
+)
 app.secret_key = config.DASHBOARD_SECRET_KEY
 
 
